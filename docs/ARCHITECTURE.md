@@ -11,13 +11,14 @@ This document explains klaus's architecture by comparing it to the major AI agen
 │  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────────┐ │
 │  │  FastAPI      │  │ Task Router  │  │ Event Bus (WebSocket)      │ │
 │  │  Gateway      │──│ local-first  │  │ real-time system activity  │ │
-│  │  REST + WS    │  │ model select │  │ token streaming            │ │
+│  │  REST + WS    │  │ model select │  │ token + tool streaming     │ │
 │  └──────┬───────┘  └──────┬───────┘  └────────────────────────────┘ │
 │         │                 │                                          │
 │  ┌──────┴─────────────────┴──────────────────────────────────────┐  │
 │  │                    LangGraph Agent                             │  │
 │  │   ReAct loop · memory context injection · tool execution      │  │
 │  │   per-request rebuild with latest tools + routed model        │  │
+│  │   tool result streaming · self-improvement reflection         │  │
 │  └──────┬──────────────┬──────────────────┬─────────────────────┘  │
 │         │              │                  │                          │
 │  ┌──────┴──────┐ ┌─────┴──────┐ ┌────────┴────────┐               │
@@ -26,14 +27,14 @@ This document explains klaus's architecture by comparing it to the major AI agen
 │  │ (LangChain) │ │ (plugins)  │ │ /conversations  │               │
 │  │             │ │            │ │ /superpowers     │               │
 │  │ ┌─────────┐ │ │ ┌────────┐│ │                  │               │
-│  │ │ Ollama  │ │ │ │MCP     ││ │ Keyword + tag    │               │
-│  │ │ HF      │ │ │ │Bridge  ││ │ search · recency │               │
-│  │ │ vLLM    │ │ │ │Memory  ││ │ boost · context  │               │
-│  │ │ OpenAI  │ │ │ │Tools   ││ │ gathering        │               │
-│  │ └─────────┘ │ │ │Custom  ││ │                  │               │
-│  └─────────────┘ │ └────────┘│ │ JSON persistence │               │
-│                  └───────────┘ │ (swappable store) │               │
-│                                └──────────────────┘               │
+│  │ │ Ollama  │ │ │ │MCP     ││ │ Hybrid search:   │               │
+│  │ │ Gemini  │ │ │ │Bridge  ││ │ keyword + tag +  │               │
+│  │ │ HF      │ │ │ │Memory  ││ │ semantic (pgvec) │               │
+│  │ │ Custom  │ │ │ │Skills  ││ │ + recency boost  │               │
+│  │ └─────────┘ │ │ │ImgGen  ││ │                  │               │
+│  └─────────────┘ │ │Custom  ││ │ PostgreSQL +     │               │
+│                  │ └────────┘│ │ pgvector          │               │
+│                  └───────────┘ └──────────────────┘               │
 │  ┌────────────────────────────────────────────────────────────┐    │
 │  │                    MCP Server Manager                      │    │
 │  │    dynamic registration · tool discovery · runtime calls   │    │
@@ -193,3 +194,34 @@ Based on the analysis above, these are the architectural additions planned for k
 | Code execution sandbox | AutoGen | Safe code execution as a superpower |
 | Structured output | CrewAI | Pydantic model validation on agent responses |
 | gRPC transport | — | Cross-language agent protocol for external agents |
+
+## Change Map — What to Touch Where
+
+Use this table to find the right files when making changes:
+
+| I want to... | Files to change |
+|--------------|----------------|
+| **Add a model backend** | `models/backends/new.py`, `models/registry.py` (factory), `config/klaus.yaml`, `pyproject.toml` |
+| **Add a superpower/tool** | `superpowers/builtin/new.py`, `app.py` (register), `tests/` |
+| **Add an API endpoint** | `api/routes/new.py`, `app.py` (mount router) |
+| **Add a UI page** | `ui/src/pages/New.tsx`, `ui/src/App.tsx` (type + render), `ui/src/components/Layout.tsx` (nav) |
+| **Change the memory tree structure** | `memory/tree.py`, possibly `memory/store.py` and `memory/index.py` |
+| **Change the database schema** | `db.py` (`_SCHEMA`), migration logic in `connect()` |
+| **Change the agent behavior** | `agents/graph.py` (`_SYSTEM_PROMPT`, `stream()`, `_build_memory_context`) |
+| **Change task routing** | `routing/router.py`, `config/klaus.yaml` (`task_routing` section) |
+| **Change the event bus** | `events/bus.py` (add `EventType`), `api/routes/events.py` (forward events) |
+| **Change config structure** | `config/settings.py` (Pydantic models), `config/klaus.yaml`, `app.py` (usage) |
+| **Add a new WebSocket event** | `events/bus.py` (EventType), `api/routes/events.py`, `ui/src/pages/Chat.tsx` (handler) |
+| **Add a container service** | `docker-compose.yml`, new `Containerfile.*`, `scripts/` |
+
+## Documentation
+
+Detailed guides for each area:
+
+| Doc | What it covers |
+|-----|----------------|
+| [ADDING_TOOLS.md](./ADDING_TOOLS.md) | Creating superpowers and tools, the plugin system |
+| [ADDING_AGENTS.md](./ADDING_AGENTS.md) | Adding model backends, the registry, vision support |
+| [UI_GUIDE.md](./UI_GUIDE.md) | React frontend architecture, design system, adding pages |
+| [API_REFERENCE.md](./API_REFERENCE.md) | All REST and WebSocket endpoints |
+| [MEMORY_SYSTEM.md](./MEMORY_SYSTEM.md) | Memory tree, pgvector embeddings, hybrid search |

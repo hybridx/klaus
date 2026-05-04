@@ -1,0 +1,29 @@
+# Keep Documentation Updated
+
+After every code change, check whether any documentation files need updating. Use the table below to determine which docs are affected.
+
+## Change → Doc Mapping
+
+| If you changed... | Update these docs |
+|-------------------|-------------------|
+| **Superpower or tool** (`superpowers/builtin/`, `app.py` registration) | `docs/ADDING_TOOLS.md` — update patterns/examples if the change introduces a new pattern |
+| **Model backend** (`models/backends/`, `registry.py`, `config/klaus.yaml`) | `docs/ADDING_AGENTS.md` — update backend table, config reference, factory map |
+| **API route** (`api/routes/`, `app.py` router mount) | `docs/API_REFERENCE.md` — add/update endpoint, add curl example |
+| **WebSocket event** (`events/bus.py`, `api/routes/events.py`) | `docs/API_REFERENCE.md` — update WebSocket protocol tables |
+| **UI page or component** (`ui/src/pages/`, `ui/src/components/`) | `docs/UI_GUIDE.md` — update project structure, page list, API connections |
+| **Memory system** (`memory/tree.py`, `memory/store.py`, `memory/index.py`) | `docs/MEMORY_SYSTEM.md` — update data flow, methods, schema |
+| **Database schema** (`db.py`) | `docs/MEMORY_SYSTEM.md` — update PostgreSQL schema section |
+| **Agent behavior** (`agents/graph.py`) | `docs/MEMORY_SYSTEM.md` (context injection), `docs/ARCHITECTURE.md` (agent description) |
+| **Config structure** (`config/settings.py`, `config/klaus.yaml`) | `docs/ADDING_AGENTS.md` (backend config), `README.md` (config example) |
+| **Architecture** (new subsystem, major refactor) | `docs/ARCHITECTURE.md` — update diagram and change map |
+| **New dependency** (`pyproject.toml`, `ui/package.json`) | `README.md` (prerequisites), `CONTRIBUTING.md` (setup) |
+| **Container/infra** (`docker-compose.yml`, `Containerfile*`, `scripts/`) | `README.md`, `CONTRIBUTING.md` |
+
+## Rules
+
+1. **Always check the change map** — even for small changes, a doc might reference the affected file.
+2. **Keep examples working** — if you change a function signature, update code examples in docs that reference it.
+3. **Don't over-document** — docs should cover the "how" and "why", not narrate every line of code.
+4. **Update the "Files to Touch" tables** — each doc has a table listing affected files. Keep it current.
+5. **README.md has its own rule** — see `keep-readme-updated.mdc` for README-specific triggers.
+6. **CONTRIBUTING.md** — update if the change affects setup, test, or extension workflows.

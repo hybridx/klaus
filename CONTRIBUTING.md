@@ -83,93 +83,28 @@ src/klaus/           Backend (Python + FastAPI)
 
 ## How to Contribute
 
-### Adding a New Model Backend
+We have detailed guides for each area of the codebase. Start with the relevant guide:
 
-1. Create `src/klaus/models/backends/your_backend.py`
-2. Implement `generate()`, `stream()`, `list_models()`, `health()`, and `get_chat_model()` — follow the pattern in `ollama.py`
-3. Register the factory in `src/klaus/models/registry.py` → `BACKEND_FACTORIES`
-4. Add a config block in `config/klaus.yaml`
-5. Write tests in `tests/test_backends.py`
+| Guide | For |
+|-------|-----|
+| **[docs/ADDING_TOOLS.md](docs/ADDING_TOOLS.md)** | Creating superpowers and agent tools |
+| **[docs/ADDING_AGENTS.md](docs/ADDING_AGENTS.md)** | Adding model backends (Ollama, OpenAI, etc.) |
+| **[docs/UI_GUIDE.md](docs/UI_GUIDE.md)** | Working on the React frontend |
+| **[docs/API_REFERENCE.md](docs/API_REFERENCE.md)** | All REST and WebSocket endpoints |
+| **[docs/MEMORY_SYSTEM.md](docs/MEMORY_SYSTEM.md)** | Memory tree, embeddings, pgvector |
+| **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** | System overview and framework comparison |
 
-### Adding a New Superpower
+### Quick Summary
 
-1. Create `src/klaus/superpowers/builtin/your_power.py`
-2. Subclass `Superpower` and implement `name`, `description`, and `get_tools()`
-3. Register it in `src/klaus/app.py` → lifespan function
-4. Write tests in `tests/test_superpowers.py`
+**Adding a model backend:** Create `src/klaus/models/backends/your_backend.py`, register in `registry.py`, add config in `klaus.yaml`. See [ADDING_AGENTS.md](docs/ADDING_AGENTS.md).
 
-Example skeleton:
+**Adding a superpower/tool:** Create `src/klaus/superpowers/builtin/your_power.py`, register in `app.py`. See [ADDING_TOOLS.md](docs/ADDING_TOOLS.md).
 
-```python
-from klaus.superpowers.base import Superpower
-from langchain_core.tools import StructuredTool
+**Adding an API endpoint:** Create `src/klaus/api/routes/your_route.py`, mount in `app.py`. See [API_REFERENCE.md](docs/API_REFERENCE.md).
 
-class WebSearch(Superpower):
-    @property
-    def name(self) -> str:
-        return "web_search"
+**Adding a UI page:** Create `ui/src/pages/YourPage.tsx`, add to `App.tsx` and `Layout.tsx`. See [UI_GUIDE.md](docs/UI_GUIDE.md).
 
-    @property
-    def description(self) -> str:
-        return "Search the web for current information"
-
-    @property
-    def tags(self) -> list[str]:
-        return ["search", "web"]
-
-    def get_tools(self) -> list[StructuredTool]:
-        async def search(query: str) -> str:
-            ...
-        return [StructuredTool.from_function(coroutine=search, name="web_search", description="...")]
-```
-
-### Adding API Endpoints
-
-1. Create a route file in `src/klaus/api/routes/`
-2. Use `get_state()` from `klaus.api.deps` to access subsystems
-3. Register the router in `src/klaus/app.py` → `create_app()`
-4. Write tests in `tests/test_api.py`
-
-### Working on the Frontend
-
-The UI is a React + Vite + Tailwind CSS project in `ui/`. The Pipeline page uses [React Flow](https://reactflow.dev/) for the agent→model flow visualization.
-
-**Adding a new page:**
-
-1. Create `ui/src/pages/YourPage.tsx` as a React component
-2. Add the page ID to the `Page` union type in `App.tsx`
-3. Add a nav entry in `components/Layout.tsx` → `NAV` array
-4. Render it conditionally in `App.tsx`
-
-Example skeleton:
-
-```tsx
-import { useEffect, useState } from 'react';
-
-export default function YourPage() {
-  const [data, setData] = useState([]);
-
-  useEffect(() => {
-    fetch('/api/your-endpoint')
-      .then((r) => r.json())
-      .then(setData)
-      .catch(() => {});
-  }, []);
-
-  return (
-    <div className="h-full overflow-y-auto p-4">
-      <p className="text-[11px] text-gray-400">Description.</p>
-      {/* your content */}
-    </div>
-  );
-}
-```
-
-**Styling guidelines:**
-
-- Use Tailwind CSS utility classes — avoid inline styles or CSS modules
-- Reference theme tokens from `index.css` (e.g. `bg-surface`, `text-accent`, `border-border`)
-- Dark mode is handled via the `.dark` class on `<html>` — use `dark:` prefixes where needed
+**Modifying memory/search:** See [MEMORY_SYSTEM.md](docs/MEMORY_SYSTEM.md) for the tree, embeddings, and hybrid search architecture.
 
 ## Code Standards
 

@@ -286,6 +286,18 @@ klaus/
                                  # conversations
 ```
 
+## Documentation
+
+| Doc | What it covers |
+|-----|----------------|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System overview, framework comparisons, change map |
+| [docs/ADDING_TOOLS.md](docs/ADDING_TOOLS.md) | Creating superpowers and agent tools |
+| [docs/ADDING_AGENTS.md](docs/ADDING_AGENTS.md) | Adding model backends (Ollama, OpenAI, HuggingFace, etc.) |
+| [docs/UI_GUIDE.md](docs/UI_GUIDE.md) | React frontend architecture, design system, adding pages |
+| [docs/API_REFERENCE.md](docs/API_REFERENCE.md) | All REST and WebSocket endpoints with examples |
+| [docs/MEMORY_SYSTEM.md](docs/MEMORY_SYSTEM.md) | Memory tree, pgvector embeddings, hybrid search |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Setup, code standards, PR process |
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, code standards, and how to add backends, superpowers, and API routes.
