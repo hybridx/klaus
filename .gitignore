@@ -15,3 +15,8 @@ data/
 ui/node_modules/
 ui/dist/
 src/klaus/ui/dist/
+
+# Documentation
+docs/node_modules/
+docs/.vitepress/dist/
+docs/.vitepress/cache/

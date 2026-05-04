@@ -288,15 +288,22 @@ klaus/
 
 ## Documentation
 
-| Doc | What it covers |
-|-----|----------------|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System overview, framework comparisons, change map |
-| [docs/ADDING_TOOLS.md](docs/ADDING_TOOLS.md) | Creating superpowers and agent tools |
-| [docs/ADDING_AGENTS.md](docs/ADDING_AGENTS.md) | Adding model backends (Ollama, OpenAI, HuggingFace, etc.) |
-| [docs/UI_GUIDE.md](docs/UI_GUIDE.md) | React frontend architecture, design system, adding pages |
-| [docs/API_REFERENCE.md](docs/API_REFERENCE.md) | All REST and WebSocket endpoints with examples |
-| [docs/MEMORY_SYSTEM.md](docs/MEMORY_SYSTEM.md) | Memory tree, pgvector embeddings, hybrid search |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Setup, code standards, PR process |
+Full documentation is hosted at **[hybridx.github.io/klaus](https://hybridx.github.io/klaus/)** (built with VitePress).
+
+| Guide | What it covers |
+|-------|----------------|
+| [Getting Started](https://hybridx.github.io/klaus/guide/getting-started) | Setup, prerequisites, dev workflow |
+| [Architecture](https://hybridx.github.io/klaus/guide/architecture) | System overview, framework comparisons, change map |
+| [Adding Tools](https://hybridx.github.io/klaus/guide/adding-tools) | Creating superpowers and agent tools |
+| [Adding Backends](https://hybridx.github.io/klaus/guide/adding-backends) | Adding model backends (Ollama, OpenAI, etc.) |
+| [UI Guide](https://hybridx.github.io/klaus/guide/ui-guide) | React frontend architecture, design system |
+| [Memory System](https://hybridx.github.io/klaus/guide/memory-system) | Memory tree, pgvector, hybrid search |
+| [API Reference](https://hybridx.github.io/klaus/reference/api) | All REST endpoints |
+| [WebSocket Protocol](https://hybridx.github.io/klaus/reference/websocket) | Real-time message protocol |
+| [Configuration](https://hybridx.github.io/klaus/reference/configuration) | YAML + env var reference |
+| [Database Schema](https://hybridx.github.io/klaus/reference/database) | PostgreSQL + pgvector schema |
+
+See also [CONTRIBUTING.md](CONTRIBUTING.md) for setup, code standards, and PR process.
 
 ## Contributing
 
