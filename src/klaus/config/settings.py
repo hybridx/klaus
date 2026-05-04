@@ -53,6 +53,17 @@ class MCPServerConfig(BaseModel):
     enabled: bool = Field(default=True)
 
 
+class DatabaseConfig(BaseModel):
+    """PostgreSQL connection configuration."""
+
+    url: str = Field(
+        default="postgresql://klaus:klaus@localhost:5432/klaus",
+        description="PostgreSQL connection URL (or set DATABASE_URL env var)",
+    )
+    pool_min: int = Field(default=2, description="Minimum pool connections")
+    pool_max: int = Field(default=10, description="Maximum pool connections")
+
+
 class ServerConfig(BaseModel):
     """HTTP server configuration."""
 
@@ -68,6 +79,7 @@ class Settings(BaseSettings):
     prefixed with klaus_.
     """
 
+    database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
     model_backends: dict[str, ModelBackendConfig] = Field(
         default_factory=lambda: {

@@ -87,6 +87,36 @@ async def delete_node(path: str):
     return {"path": path, "status": "deleted"}
 
 
+@router.get("/graph")
+async def memory_graph():
+    """Return the memory tree as a flat node list optimized for graph rendering."""
+    state = get_state()
+    tree = state.memory.tree
+    nodes: list[dict] = []
+
+    def _flatten(node, path: str, parent_id: str | None):
+        branch = path.strip("/").split("/")[0] if path.strip("/") else "root"
+        nodes.append({
+            "id": node.id,
+            "label": node.name or "root",
+            "path": path or "/",
+            "parent": parent_id,
+            "content_preview": (
+                (node.content[:120] + "...") if len(node.content) > 120 else node.content
+            ),
+            "tags": node.tags,
+            "branch": branch,
+            "children_count": len(node.children),
+            "access_count": node.access_count,
+        })
+        for name, child in node.children.items():
+            child_path = f"{path}/{name}" if path != "/" else f"/{name}"
+            _flatten(child, child_path, node.id)
+
+    _flatten(tree.root, "/", None)
+    return {"nodes": nodes, "total": len(nodes)}
+
+
 @router.get("/search")
 async def search_memory(q: str, root: str = "/", max_results: int = 15):
     state = get_state()

@@ -9,9 +9,28 @@ services:
       - ./config:/app/config
     environment:
       - klaus_LOG_LEVEL=info
+      - DATABASE_URL=postgresql://klaus:klaus@postgres:5432/klaus
     depends_on:
+      postgres:
+        condition: service_healthy
       ollama:
         condition: service_started
+    restart: unless-stopped
+
+  postgres:
+    build:
+      context: .
+      dockerfile: Containerfile.postgres
+    image: klaus-postgres:latest
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U klaus"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
     restart: unless-stopped
 
   ollama:
@@ -23,4 +42,5 @@ services:
     restart: unless-stopped
 
 volumes:
+  postgres_data:
   ollama_data:

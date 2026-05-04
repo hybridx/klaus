@@ -1,3 +1,8 @@
+database:
+  url: postgresql://klaus:klaus@localhost:5432/klaus
+  pool_min: 2
+  pool_max: 10
+
 server:
   host: "0.0.0.0"
   port: 8000
@@ -16,11 +21,19 @@ model_backends:
 
 # Uncomment to add cloud backends (set API keys in .env first):
 #
-# gemini:
-#   type: gemini
-#   base_url: https://generativelanguage.googleapis.com
-#   default_model: gemini-2.0-flash
-#   locality: cloud
+#  gemini:
+#    type: gemini
+#    base_url: https://generativelanguage.googleapis.com
+#    default_model: gemini-2.0-flash
+#    locality: cloud
+#
+#  huggingface:
+#    type: huggingface
+#    default_model: Qwen/Qwen3-235B-A22B
+#    locality: cloud
+#    # Set HF_TOKEN in .env or use options.api_key below:
+#    # options:
+#    #   api_key: hf_...
 
 # Task routing: assign specific models to task types.
 # You can also add/remove these at runtime from the Routing tab in the dashboard.

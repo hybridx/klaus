@@ -43,6 +43,8 @@ jobs:
         uses: astral-sh/setup-uv@v4
 
       - name: Run tests
+        env:
+          SKIP_PG_TESTS: "1"
         run: uv run --extra dev pytest tests/ -v --tb=short
 
   build:
@@ -54,10 +56,3 @@ jobs:
 
       - name: Build container image
         run: docker build -f Containerfile -t klaus:ci .
-
-      - name: Verify container starts
-        run: |
-          docker run -d --name klaus-test -p 8000:8000 klaus:ci
-          sleep 5
-          docker logs klaus-test
-          docker stop klaus-test

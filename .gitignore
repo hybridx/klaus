@@ -10,3 +10,8 @@ build/
 *.egg
 .env
 data/
+
+# Frontend
+ui/node_modules/
+ui/dist/
+src/klaus/ui/dist/

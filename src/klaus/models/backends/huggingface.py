@@ -1,14 +1,14 @@
-"""Ollama backend — wraps LangChain's ChatOllama."""
+"""HuggingFace backend — wraps LangChain's ChatHuggingFace via HF Inference API."""
 
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import AsyncIterator
 from typing import Any
 
-import httpx
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langchain_ollama import ChatOllama
+from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint
 
 from klaus.models.base import ChatMessage, GenerateRequest, GenerateResponse, ModelInfo
 
@@ -38,37 +38,53 @@ def _to_lc_messages(messages: list[ChatMessage]) -> list:
     return result
 
 
-class OllamaBackend:
-    """Ollama backend powered by langchain-ollama."""
+_RECOMMENDED_MODELS = [
+    ("Qwen/Qwen3-235B-A22B", ["chat", "code", "reasoning"]),
+    ("meta-llama/Llama-3.3-70B-Instruct", ["chat", "code"]),
+    ("mistralai/Mistral-Small-24B-Instruct-2501", ["chat", "code"]),
+    ("google/gemma-3-27b-it", ["chat", "vision"]),
+    ("NousResearch/Hermes-3-Llama-3.1-8B", ["chat", "code"]),
+    ("microsoft/Phi-4-mini-instruct", ["chat", "code"]),
+]
+
+
+class HuggingFaceBackend:
+    """HuggingFace backend via the Inference API (serverless).
+
+    Uses ChatHuggingFace from langchain-huggingface, which wraps
+    huggingface_hub.InferenceClient under the hood. No local GPU required.
+
+    API key resolved in this order:
+    1. options.api_key from config YAML
+    2. HF_TOKEN environment variable
+    """
 
     def __init__(
         self,
-        base_url: str = "http://localhost:11434",
+        base_url: str = "https://api-inference.huggingface.co",
         default_model: str | None = None,
         options: dict[str, Any] | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
-        self._default_model = default_model or "llama3.2"
+        self._default_model = default_model or "Qwen/Qwen3-235B-A22B"
         self._options = options or {}
-        self._http: httpx.AsyncClient | None = None
+        self._api_key = self._options.get("api_key") or os.getenv("HF_TOKEN", "")
 
     @property
     def backend_type(self) -> str:
-        return "ollama"
+        return "huggingface"
 
     def get_chat_model(
         self, model: str | None = None, temperature: float = 0.7, **kwargs
-    ) -> ChatOllama:
-        """Return a configured ChatOllama instance.
-
-        This is the LangChain chat model that LangGraph agents will use directly.
-        """
-        return ChatOllama(
-            model=model or self._default_model,
-            base_url=self._base_url,
+    ) -> ChatHuggingFace:
+        repo_id = model or self._default_model
+        llm = HuggingFaceEndpoint(
+            repo_id=repo_id,
+            huggingfacehub_api_token=self._api_key,
             temperature=temperature,
-            **kwargs,
+            task="text-generation",
         )
+        return ChatHuggingFace(llm=llm)
 
     async def generate(self, request: GenerateRequest) -> GenerateResponse:
         llm = self.get_chat_model(
@@ -88,10 +104,7 @@ class OllamaBackend:
         return GenerateResponse(
             content=result.content if isinstance(result.content, str) else str(result.content),
             model=request.model or self._default_model,
-            finish_reason=(
-                result.response_metadata.get("done_reason")
-                if result.response_metadata else None
-            ),
+            finish_reason=None,
             usage=usage,
         )
 
@@ -106,49 +119,39 @@ class OllamaBackend:
                 yield chunk.content if isinstance(chunk.content, str) else str(chunk.content)
 
     async def list_models(self) -> list[ModelInfo]:
-        try:
-            resp = await self._get_http().get("/api/tags")
-            resp.raise_for_status()
-            data = resp.json()
-        except Exception as exc:
-            logger.warning("Failed to list Ollama models: %s", exc)
-            return []
-
-        models = []
-        for m in data.get("models", []):
-            details = m.get("details", {})
-            size_bytes = m.get("size")
-            size_str = None
-            if size_bytes:
-                gb = size_bytes / (1024**3)
-                size_str = f"{gb:.1f}GB" if gb >= 1 else f"{size_bytes / (1024**2):.0f}MB"
-            models.append(
-                ModelInfo(
-                    name=m["name"],
-                    backend="ollama",
-                    size=size_str,
-                    quantization=details.get("quantization_level"),
-                    capabilities=["chat"],
-                )
+        return [
+            ModelInfo(
+                name=name,
+                backend="huggingface",
+                capabilities=caps,
             )
-        return models
+            for name, caps in _RECOMMENDED_MODELS
+        ]
 
     async def health(self) -> bool:
+        if not self._api_key:
+            return False
         try:
-            resp = await self._get_http().get("/")
-            return resp.status_code == 200
-        except httpx.HTTPError:
+            from huggingface_hub import InferenceClient
+            client = InferenceClient(token=self._api_key)
+            client.text_generation("test", model=self._default_model, max_new_tokens=1)
+            return True
+        except Exception as exc:
+            logger.warning("HuggingFace health check failed: %s", exc)
             return False
 
-    def _get_http(self) -> httpx.AsyncClient:
-        if self._http is None:
-            self._http = httpx.AsyncClient(base_url=self._base_url, timeout=30.0)
-        return self._http
-
     async def startup(self) -> None:
-        logger.info("Ollama backend (LangChain) at %s", self._base_url)
+        if not self._api_key:
+            logger.warning(
+                "HuggingFace backend has no API key — set HF_TOKEN in .env "
+                "or options.api_key in config"
+            )
+        else:
+            logger.info(
+                "HuggingFace backend ready (model: %s, key: %s...)",
+                self._default_model,
+                self._api_key[:8],
+            )
 
     async def shutdown(self) -> None:
-        if self._http:
-            await self._http.aclose()
-            self._http = None
+        pass

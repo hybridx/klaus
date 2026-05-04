@@ -26,10 +26,16 @@ async def lifespan(app: FastAPI):
     )
     logger = logging.getLogger("klaus")
 
-    state = init_state(prefer_local=settings.prefer_local)
+    db_cfg = settings.database
+    state = init_state(
+        prefer_local=settings.prefer_local,
+        database_url=db_cfg.url,
+        pool_min=db_cfg.pool_min,
+        pool_max=db_cfg.pool_max,
+    )
 
     # ── Database ─────────────────────────────────────────────
-    logger.info("Connecting to SQLite...")
+    logger.info("Connecting to PostgreSQL...")
     await state.init_db()
 
     # ── Memory ───────────────────────────────────────────────
@@ -86,11 +92,15 @@ async def lifespan(app: FastAPI):
     # ── Superpowers ──────────────────────────────────────────
     registry = state.init_superpowers()
 
+    from klaus.superpowers.builtin.image_gen import ImageGeneration
     from klaus.superpowers.builtin.mcp_bridge import MCPBridge
     from klaus.superpowers.builtin.memory_tools import MemoryTools
+    from klaus.superpowers.builtin.skills import SkillsSuperpower
 
     await registry.register(MCPBridge(state.mcp_manager))
-    await registry.register(MemoryTools(state.memory))
+    await registry.register(MemoryTools(state.memory, db=state.db))
+    await registry.register(SkillsSuperpower(state.memory))
+    await registry.register(ImageGeneration())
     logger.info(
         "Superpowers ready: %d active", registry.active_count
     )
@@ -128,15 +138,7 @@ async def lifespan(app: FastAPI):
     await state.db.close()
 
 
-_dashboard_html: str | None = None
-
-
-def _get_dashboard_html() -> str:
-    global _dashboard_html
-    if _dashboard_html is None:
-        path = Path(__file__).parent / "ui" / "dashboard.html"
-        _dashboard_html = path.read_text()
-    return _dashboard_html
+_UI_DIST = Path(__file__).parent / "ui" / "dist"
 
 
 def create_app() -> FastAPI:
@@ -161,7 +163,23 @@ def create_app() -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     async def dashboard():
-        return _get_dashboard_html()
+        index = _UI_DIST / "index.html"
+        if index.exists():
+            return index.read_text()
+        return (
+            "<h1>UI not built</h1>"
+            "<p>Run <code>cd ui &amp;&amp; npm install &amp;&amp; npm run build</code> first.</p>"
+        )
+
+    from fastapi.staticfiles import StaticFiles
+
+    assets_dir = _UI_DIST / "assets"
+    assets_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/assets", StaticFiles(directory=assets_dir), name="static")
+
+    images_dir = Path("data/images")
+    images_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/api/images", StaticFiles(directory=images_dir), name="images")
 
     @app.get("/health")
     async def health():

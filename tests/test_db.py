@@ -1,15 +1,38 @@
-"""Tests for the SQLite database layer."""
+"""Tests for the PostgreSQL database layer.
+
+These tests require a running PostgreSQL instance with pgvector.
+Start one with: podman-compose up postgres
+
+Set DATABASE_URL or use the default: postgresql://klaus:klaus@localhost:5432/klaus
+"""
 
 from __future__ import annotations
 
+import os
+
 import pytest
+
 from klaus.db import Database
+
+_TEST_URL = os.getenv(
+    "DATABASE_URL", "postgresql://klaus:klaus@localhost:5432/klaus"
+)
+
+pytestmark = pytest.mark.skipif(
+    os.getenv("SKIP_PG_TESTS", "0") == "1",
+    reason="PostgreSQL not available (set SKIP_PG_TESTS=0 to enable)",
+)
 
 
 @pytest.fixture()
-async def db(tmp_path):
-    d = Database(path=tmp_path / "test.db")
+async def db():
+    d = Database(url=_TEST_URL)
     await d.connect()
+    # Clean up test data before each test
+    await d.pool.execute("DELETE FROM conversations")
+    await d.pool.execute("DELETE FROM routing_rules")
+    await d.pool.execute("DELETE FROM memory_tree WHERE id = 1")
+    await d.pool.execute("DELETE FROM embeddings")
     yield d
     await d.close()
 
@@ -44,7 +67,10 @@ async def test_memory_tree_empty(db: Database):
 @pytest.mark.asyncio
 async def test_save_and_get_conversation(db: Database):
     await db.save_message("sess1", "user", "Hello")
-    await db.save_message("sess1", "assistant", "Hi there", model="llama3.2", backend="ollama")
+    await db.save_message(
+        "sess1", "assistant", "Hi there",
+        model="llama3.2", backend="ollama",
+    )
 
     messages = await db.get_conversation("sess1")
     assert len(messages) == 2
@@ -84,12 +110,25 @@ async def test_empty_conversation(db: Database):
     assert messages == []
 
 
+@pytest.mark.asyncio
+async def test_delete_all_conversations(db: Database):
+    await db.save_message("s1", "user", "hi")
+    await db.save_message("s2", "user", "bye")
+    count = await db.delete_all_conversations()
+    assert count == 2
+    assert await db.list_sessions() == []
+
+
 # ── Routing rules ────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
 async def test_routing_rules_roundtrip(db: Database):
-    rule = {"preferred_backend": "ollama", "preferred_model": "llama3.2", "fallback_backends": []}
+    rule = {
+        "preferred_backend": "ollama",
+        "preferred_model": "llama3.2",
+        "fallback_backends": [],
+    }
     await db.save_routing_rule("coding", rule)
 
     rules = await db.load_routing_rules()
@@ -119,3 +158,38 @@ async def test_routing_rules_delete(db: Database):
 async def test_routing_rules_empty(db: Database):
     rules = await db.load_routing_rules()
     assert rules == {}
+
+
+# ── Embeddings ───────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_save_and_search_embedding(db: Database):
+    vec = [0.1] * 384
+    await db.save_embedding("/knowledge/test", "test content", vec)
+
+    results = await db.search_embeddings(vec, limit=5)
+    assert len(results) >= 1
+    assert results[0]["path"] == "/knowledge/test"
+    assert results[0]["similarity"] > 0.99
+
+
+@pytest.mark.asyncio
+async def test_embedding_upsert(db: Database):
+    vec = [0.2] * 384
+    await db.save_embedding("/knowledge/x", "v1", vec)
+    await db.save_embedding("/knowledge/x", "v2", vec)
+
+    count = await db.embedding_count()
+    assert count == 1
+
+
+@pytest.mark.asyncio
+async def test_delete_embeddings(db: Database):
+    vec = [0.3] * 384
+    await db.save_embedding("/knowledge/del/a", "a", vec)
+    await db.save_embedding("/knowledge/del/b", "b", vec)
+
+    await db.delete_embeddings("/knowledge/del")
+    count = await db.embedding_count()
+    assert count == 0

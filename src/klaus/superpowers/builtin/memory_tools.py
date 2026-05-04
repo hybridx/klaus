@@ -13,15 +13,17 @@ from langchain_core.tools import StructuredTool
 from klaus.superpowers.base import Superpower
 
 if TYPE_CHECKING:
+    from klaus.db import Database
     from klaus.memory.store import MemoryManager
 
 
 class MemoryTools(Superpower):
     """Gives the agent direct access to the memory tree."""
 
-    def __init__(self, memory_manager: MemoryManager) -> None:
+    def __init__(self, memory_manager: MemoryManager, db: Database | None = None) -> None:
         super().__init__()
         self._mm = memory_manager
+        self._db = db
 
     @property
     def name(self) -> str:
@@ -37,10 +39,12 @@ class MemoryTools(Superpower):
 
     def get_tools(self) -> list[StructuredTool]:
         mm = self._mm
+        db = self._db
 
         async def remember(path: str, content: str) -> str:
             """Store information in the memory tree at the given path."""
             mm.put(f"/knowledge/{path.strip('/')}", content)
+            await mm.flush_embeddings()
             return f"Stored at /knowledge/{path.strip('/')}"
 
         async def recall(path: str) -> str:
@@ -51,13 +55,17 @@ class MemoryTools(Superpower):
             return node.content or "(empty node)"
 
         async def search_memory(query: str) -> str:
-            """Search the memory tree for relevant information."""
-            results = mm.search(query, root_path="/knowledge", max_results=5)
+            """Search memory using semantic + keyword hybrid search."""
+            from klaus.memory.index import MemoryIndex
+
+            index = MemoryIndex(mm.tree, db=db)
+            results = await index.hybrid_search(query, root_path="/", max_results=8)
             if not results:
                 return "No matching memories found."
             lines = []
-            for path, node, _score in results:
-                lines.append(f"[{path}] {node.content[:200]}")
+            for r in results:
+                snippet = r.node.content[:200] if r.node.content else "(empty)"
+                lines.append(f"[{r.path}] ({r.match_reason}, score={r.score:.2f}) {snippet}")
             return "\n".join(lines)
 
         async def list_memory(path: str = "/") -> str:

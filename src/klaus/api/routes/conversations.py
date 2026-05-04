@@ -17,6 +17,14 @@ async def list_sessions(limit: int = 50):
     return {"sessions": sessions}
 
 
+@router.delete("/")
+async def delete_all_conversations():
+    """Delete all conversation history."""
+    state = get_state()
+    count = await state.db.delete_all_conversations()
+    return {"deleted_messages": count}
+
+
 @router.get("/{session_id}")
 async def get_conversation(session_id: str, limit: int = 100):
     """Get message history for a conversation session."""

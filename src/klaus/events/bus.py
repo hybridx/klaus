@@ -31,6 +31,7 @@ class EventType(StrEnum):
     MCP_DISCONNECTED = "mcp.disconnected"
     MCP_REMOVED = "mcp.removed"
     MCP_TOOL_CALLED = "mcp.tool_called"
+    TOOL_RESULT = "tool.result"
     ROUTING_RULE_SET = "routing.rule_set"
     ROUTING_RULE_REMOVED = "routing.rule_removed"
 

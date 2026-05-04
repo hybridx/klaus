@@ -16,6 +16,7 @@ class ChatMessage:
     content: str
     name: str | None = None
     tool_call_id: str | None = None
+    images: list[str] = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
 
 

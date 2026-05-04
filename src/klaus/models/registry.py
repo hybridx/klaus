@@ -7,6 +7,7 @@ from typing import Any
 
 from klaus.config.settings import ModelBackendConfig
 from klaus.models.backends.gemini import GeminiBackend
+from klaus.models.backends.huggingface import HuggingFaceBackend
 from klaus.models.backends.ollama import OllamaBackend
 from klaus.models.base import GenerateRequest, GenerateResponse, ModelInfo
 
@@ -15,6 +16,7 @@ logger = logging.getLogger(__name__)
 BACKEND_FACTORIES: dict[str, type] = {
     "ollama": OllamaBackend,
     "gemini": GeminiBackend,
+    "huggingface": HuggingFaceBackend,
 }
 
 

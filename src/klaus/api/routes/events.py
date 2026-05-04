@@ -54,6 +54,7 @@ async def websocket_endpoint(ws: WebSocket):
 async def _handle_chat(ws: WebSocket, msg: dict, state) -> None:
     """Handle a chat message using the LangGraph agent with streaming."""
     messages_raw = msg.get("messages", [])
+    images_raw = msg.get("images", [])
     task = msg.get("task")
     model = msg.get("model")
     backend = msg.get("backend")
@@ -88,7 +89,12 @@ async def _handle_chat(ws: WebSocket, msg: dict, state) -> None:
         },
     )
 
-    messages = [ChatMessage(role=m["role"], content=m["content"]) for m in messages_raw]
+    messages = []
+    for m in messages_raw:
+        cm = ChatMessage(role=m["role"], content=m["content"])
+        if m["role"] == "user" and images_raw:
+            cm.images = images_raw
+        messages.append(cm)
 
     for m in messages_raw:
         await state.db.save_message(chat_id, m["role"], m["content"])
@@ -125,6 +131,16 @@ async def _handle_chat(ws: WebSocket, msg: dict, state) -> None:
                 state.event_bus.emit(
                     EventType.MCP_TOOL_CALLED,
                     {"name": event["name"], "chat_id": chat_id},
+                )
+            elif event["type"] == "tool_result":
+                await state.event_bus.send_to_ws(
+                    ws,
+                    EventType.TOOL_RESULT,
+                    {
+                        "name": event["name"],
+                        "content": event["content"],
+                        "chat_id": chat_id,
+                    },
                 )
             elif event["type"] == "done":
                 await state.event_bus.send_to_ws(

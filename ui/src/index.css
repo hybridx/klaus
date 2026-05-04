@@ -1,0 +1,106 @@
+@import "tailwindcss";
+@import "highlight.js/styles/github.min.css" layer(base);
+
+.dark .hljs {
+  background: transparent !important;
+  color: #e7e5e4;
+}
+.hljs { background: transparent !important; }
+.hljs-keyword { color: #9f7aea; }
+.hljs-string { color: #68a063; }
+.hljs-comment { color: #a8a29e; font-style: italic; }
+.hljs-number { color: #d97706; }
+.hljs-title { color: #3b82f6; }
+.hljs-attr { color: #d97706; }
+.hljs-tag { color: #ef4444; }
+.hljs-built_in { color: #0ea5e9; }
+
+@theme {
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --color-surface: #ffffff;
+  --color-surface-alt: #fafaf9;
+  --color-surface-strong: #f5f5f4;
+  --color-border: #e7e5e4;
+  --color-border-focus: #78716c;
+  --color-accent: #78716c;
+  --color-accent-soft: rgba(120, 113, 108, 0.06);
+  --color-green: #4ade80;
+  --color-red: #f87171;
+  --color-amber: #fbbf24;
+}
+
+html {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+body,
+textarea,
+input,
+select,
+button {
+  background: var(--color-surface-alt);
+  color: #1c1917;
+}
+
+textarea,
+input,
+select {
+  background: transparent;
+}
+
+/* Warm dark theme */
+.dark body,
+.dark textarea,
+.dark input,
+.dark select,
+.dark button {
+  color: #e7e5e4;
+}
+
+.dark body {
+  background: #1c1917;
+}
+
+.dark {
+  --color-surface: #292524;
+  --color-surface-alt: #1c1917;
+  --color-surface-strong: #44403c;
+  --color-border: #44403c;
+  --color-accent: #a8a29e;
+  --color-accent-soft: rgba(168, 162, 158, 0.08);
+}
+
+::selection {
+  background: rgba(120, 113, 108, 0.2);
+}
+
+.dark ::selection {
+  background: rgba(168, 162, 158, 0.25);
+}
+
+/* Ensure assistant message text is always readable */
+.msg-text,
+.msg-text p,
+.msg-text li,
+.msg-text h1,
+.msg-text h2,
+.msg-text h3,
+.msg-text td,
+.msg-text th,
+.msg-text blockquote {
+  color: #1c1917;
+}
+
+.dark .msg-text,
+.dark .msg-text p,
+.dark .msg-text li,
+.dark .msg-text h1,
+.dark .msg-text h2,
+.dark .msg-text h3,
+.dark .msg-text td,
+.dark .msg-text th,
+.dark .msg-text blockquote {
+  color: #e7e5e4;
+}

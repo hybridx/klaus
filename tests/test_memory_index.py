@@ -35,15 +35,15 @@ class TestMemoryIndex:
         results = idx.search("zzz_nothing_matches_zzz")
         assert results == []
 
-    def test_gather_context(self):
+    async def test_gather_context(self):
         tree = self._make_tree()
         idx = MemoryIndex(tree)
-        ctx = idx.gather_context("python programming")
+        ctx = await idx.gather_context("python programming")
         assert isinstance(ctx, str)
 
-    def test_gather_context_with_conversation(self):
+    async def test_gather_context_with_conversation(self):
         tree = self._make_tree()
         tree.put("/conversations/s1", "hello world", tags=["conv"])
         idx = MemoryIndex(tree)
-        ctx = idx.gather_context("hello", conversation_path="/conversations/s1")
+        ctx = await idx.gather_context("hello", conversation_path="/conversations/s1")
         assert isinstance(ctx, str)

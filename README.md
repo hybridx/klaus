@@ -1,6 +1,6 @@
 # klaus
 
-[![CI](https://github.com/<owner>/klaus/actions/workflows/ci.yml/badge.svg)](https://github.com/<owner>/klaus/actions/workflows/ci.yml)
+[![CI](https://github.com/hybridx/klaus/actions/workflows/ci.yml/badge.svg)](https://github.com/hybridx/klaus/actions/workflows/ci.yml)
 
 Multi-agent AI assistant platform — standalone or multi-cluster — with local model support and dynamic MCP integration.
 
@@ -26,10 +26,10 @@ Multi-agent AI assistant platform — standalone or multi-cluster — with local
 │  │ Registry    │ │ Registry   │ │ /knowledge      │               │
 │  │ (LangChain) │ │ (plugins)  │ │ /conversations  │               │
 │  │ Ollama, HF, │ │ MCP Bridge │ │ /superpowers    │               │
-│  │ vLLM, OAI   │ │ + custom   │ │ SQLite persist  │               │
+│  │ vLLM, OAI   │ │ + custom   │ │ pgvector embeds │               │
 │  └─────────────┘ └────────────┘ └─────────────────┘               │
 │  ┌────────────────────────────────────────────────────────────┐    │
-│  │  SQLite (memory, conversations, routing rules)             │    │
+│  │  PostgreSQL + pgvector (memory, conversations, embeddings) │    │
 │  │  MCP Server Manager · Langfuse Observability               │    │
 │  └────────────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────────────┘
@@ -43,6 +43,7 @@ For a deep dive comparing klaus to LangGraph, AutoGen, CrewAI, OpenAI Agents SDK
 
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/) — handles venv, deps, and script execution
+- [Podman Desktop](https://podman-desktop.io/) — runs PostgreSQL (required) and Ollama containers
 - [Ollama](https://ollama.ai/) running locally (for the default backend)
 - Google Gemini API key (optional — for cloud model fallback, see [Configuration](#api-keys))
 
@@ -50,19 +51,33 @@ For a deep dive comparing klaus to LangGraph, AutoGen, CrewAI, OpenAI Agents SDK
 
 ```bash
 git clone <repo-url> && cd klaus
+
+# Start PostgreSQL (required) — pgvector for embeddings
+bash scripts/start-postgres.sh
 ollama pull llama3.2
+
+# Build the frontend
+cd ui && npm install && npm run build && cd ..
+
+# Start the backend
 uv run klaus-dev
 ```
 
-`uv` handles the virtual environment and dependencies automatically — no separate install step.
+`uv` handles the Python virtual environment and dependencies automatically — no separate install step.
 
 ### Common commands
 
 ```bash
+# Backend
 uv run klaus-dev              # dev server with auto-reload
 uv run pytest                 # run tests
 uv run ruff check src/ tests/ # lint
 uv run ruff check --fix src/  # auto-fix lint issues
+
+# Frontend (from ui/ directory)
+npm run dev                   # Vite dev server with HMR (proxies /api → backend)
+npm run build                 # production build → src/klaus/ui/dist/
+npm run preview               # Preview production build
 ```
 
 ### Podman (containerized)
@@ -147,7 +162,9 @@ cp .env.example .env
 ```
 
 ```env
+DATABASE_URL=postgresql://klaus:klaus@localhost:5432/klaus
 GOOGLE_API_KEY=AIza...
+HF_TOKEN=hf_...
 ```
 
 The `.env` file is gitignored — secrets stay local.
@@ -157,6 +174,9 @@ The `.env` file is gitignored — secrets stay local.
 Edit `config/klaus.yaml` or set environment variables prefixed with `klaus_`:
 
 ```yaml
+database:
+  url: postgresql://klaus:klaus@localhost:5432/klaus
+
 server:
   host: "0.0.0.0"
   port: 8000
@@ -178,6 +198,12 @@ model_backends:
     locality: cloud
     # API key loaded from GOOGLE_API_KEY in .env
 
+  huggingface:
+    type: huggingface
+    default_model: Qwen/Qwen3-235B-A22B
+    locality: cloud
+    # API key loaded from HF_TOKEN in .env
+
 log_level: info
 ```
 
@@ -189,12 +215,39 @@ With `prefer_local: true` (the default), klaus uses Ollama for routine tasks and
 klaus/
 ├── config/klaus.yaml            # Default configuration
 ├── docker-compose.yml           # Podman Compose deployment
-├── Containerfile                # Container build
+├── Containerfile                # Container build (Klaus app)
+├── Containerfile.postgres       # Container build (PostgreSQL + pgvector)
+├── scripts/
+│   ├── start-postgres.sh       # Start/build PostgreSQL container
+│   └── init-pgvector.sql       # DB init script (enables pgvector)
 ├── pyproject.toml
 ├── docs/ARCHITECTURE.md         # Architecture deep-dive
 ├── CONTRIBUTING.md              # Contributor guide
 ├── .env.example                 # Template for API keys
 ├── tests/                       # Test suite (107 tests)
+├── ui/                          # Frontend (React + Vite + Tailwind + React Flow)
+│   ├── package.json
+│   ├── vite.config.ts
+│   ├── tsconfig.json
+│   ├── index.html
+│   └── src/
+│       ├── main.tsx             # React entry point
+│       ├── App.tsx              # Root component + page routing
+│       ├── index.css            # Tailwind + theme tokens
+│       ├── hooks/
+│       │   ├── useWebSocket.ts  # WebSocket singleton hook
+│       │   └── useTheme.ts      # Light/dark theme hook
+│       ├── components/
+│       │   ├── Layout.tsx       # App shell, header, nav menu
+│       │   ├── Sidebar.tsx      # Conversation history sidebar
+│       │   └── Markdown.tsx     # Markdown renderer (react-markdown)
+│       └── pages/
+│           ├── Chat.tsx         # Chat with model selector + image upload
+│           ├── Knowledge.tsx    # Knowledge graph visualization
+│           ├── Flow.tsx         # Pipeline view (React Flow)
+│           ├── Models.tsx       # Model backend viewer
+│           ├── Routing.tsx      # Task routing rules
+│           └── Activity.tsx     # Real-time event log
 └── src/klaus/
     ├── main.py                  # CLI entrypoint
     ├── app.py                   # FastAPI app factory + lifespan
@@ -207,8 +260,9 @@ klaus/
     │   ├── registry.py          # Model backend registry
     │   └── backends/
     │       ├── ollama.py        # Ollama adapter (LangChain)
-    │       └── gemini.py        # Google Gemini adapter
-    ├── db.py                    # SQLite database (aiosqlite)
+    │       ├── gemini.py        # Google Gemini adapter
+    │       └── huggingface.py   # HuggingFace Inference API adapter
+    ├── db.py                    # PostgreSQL + pgvector (asyncpg)
     ├── routing/router.py        # Task-based model routing
     ├── memory/
     │   ├── tree.py              # Hierarchical memory tree
@@ -217,10 +271,14 @@ klaus/
     ├── superpowers/
     │   ├── base.py              # Superpower abstract class
     │   ├── registry.py          # Superpower lifecycle manager
-    │   └── builtin/             # MCP bridge, memory tools
+    │   └── builtin/
+    │       ├── mcp_bridge.py    # MCP tool bridge
+    │       ├── memory_tools.py  # Memory read/write/search
+    │       ├── skills.py        # Self-improving skills system
+    │       └── image_gen.py     # Image generation (HF)
     ├── events/bus.py            # WebSocket event bus
     ├── mcp/manager.py           # Dynamic MCP server manager
-    ├── ui/dashboard.html        # Lit web components dashboard
+    ├── ui/dist/                 # Built frontend (gitignored)
     └── api/
         ├── deps.py              # Shared app state
         └── routes/              # chat, models, mcp, routing,
@@ -238,7 +296,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, code standards, and how to add
 - [ ] **A2A protocol** — Agent Cards, task state machine, multi-instance discovery (Google A2A)
 - [ ] **Guardrails** — input/output validation pipeline
 - [ ] **Orchestration patterns** — sequential, concurrent, handoff strategies (Semantic Kernel)
-- [ ] **HuggingFace backend** — local transformers inference
+- [x] **HuggingFace backend** — HF Inference API for chat + image generation
 - [ ] **vLLM backend** — high-performance model serving
 - [ ] **OpenAI-compatible backend** — any provider with an OpenAI-style API
 - [ ] **gRPC transport** — cross-language agent protocol for external agent interop

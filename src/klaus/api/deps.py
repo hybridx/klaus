@@ -6,7 +6,7 @@ from klaus.agents.graph import klausAgent
 from klaus.db import Database
 from klaus.events.bus import EventBus
 from klaus.mcp.manager import MCPServerManager
-from klaus.memory.store import MemoryManager, SqliteStore
+from klaus.memory.store import MemoryManager, PostgresStore
 from klaus.models.registry import ModelRegistry
 from klaus.routing.router import TaskRouter
 from klaus.superpowers.registry import SuperpowerRegistry
@@ -15,8 +15,18 @@ from klaus.superpowers.registry import SuperpowerRegistry
 class AppState:
     """Holds references to the core subsystems, accessible from any route."""
 
-    def __init__(self, prefer_local: bool = True) -> None:
-        self.db = Database()
+    def __init__(
+        self,
+        prefer_local: bool = True,
+        database_url: str | None = None,
+        pool_min: int = 2,
+        pool_max: int = 10,
+    ) -> None:
+        self.db = Database(
+            url=database_url,
+            pool_min=pool_min,
+            pool_max=pool_max,
+        )
         self.model_registry = ModelRegistry()
         self.mcp_manager = MCPServerManager()
         self.task_router = TaskRouter(prefer_local=prefer_local)
@@ -27,7 +37,7 @@ class AppState:
 
     async def init_db(self) -> None:
         await self.db.connect()
-        self.memory = MemoryManager(store=SqliteStore(self.db))
+        self.memory = MemoryManager(store=PostgresStore(self.db), db=self.db)
 
     def init_superpowers(self) -> SuperpowerRegistry:
         self.superpowers = SuperpowerRegistry(self.memory)
@@ -39,6 +49,7 @@ class AppState:
             self.mcp_manager,
             memory=self.memory,
             superpowers=self.superpowers,
+            db=self.db,
         )
 
 
@@ -51,7 +62,17 @@ def get_state() -> AppState:
     return _state
 
 
-def init_state(prefer_local: bool = True) -> AppState:
+def init_state(
+    prefer_local: bool = True,
+    database_url: str | None = None,
+    pool_min: int = 2,
+    pool_max: int = 10,
+) -> AppState:
     global _state
-    _state = AppState(prefer_local=prefer_local)
+    _state = AppState(
+        prefer_local=prefer_local,
+        database_url=database_url,
+        pool_min=pool_min,
+        pool_max=pool_max,
+    )
     return _state
