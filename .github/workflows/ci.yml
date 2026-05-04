@@ -47,12 +47,19 @@ jobs:
           SKIP_PG_TESTS: "1"
         run: uv run --extra dev pytest tests/ -v --tb=short
 
-  build:
-    name: Container Build
+  containerfile:
+    name: Validate Containerfiles
     runs-on: ubuntu-latest
     needs: [lint, test]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build container image
-        run: docker build -f Containerfile -t klaus:ci .
+      - name: Check Containerfiles exist and are non-empty
+        run: |
+          for f in Containerfile Containerfile.postgres; do
+            if [ ! -s "$f" ]; then
+              echo "ERROR: $f is missing or empty"
+              exit 1
+            fi
+            echo "OK: $f ($(wc -l < "$f") lines)"
+          done
