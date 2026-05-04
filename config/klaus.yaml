@@ -1,0 +1,64 @@
+server:
+  host: "0.0.0.0"
+  port: 8000
+
+default_backend: ollama
+prefer_local: true
+
+model_backends:
+  ollama:
+    type: ollama
+    base_url: http://localhost:11434
+    models:
+      - llama3.2
+    default_model: llama3.2
+    locality: local
+
+# Uncomment to add cloud backends (set API keys in .env first):
+#
+# gemini:
+#   type: gemini
+#   base_url: https://generativelanguage.googleapis.com
+#   default_model: gemini-2.0-flash
+#   locality: cloud
+
+# Task routing: assign specific models to task types.
+# You can also add/remove these at runtime from the Routing tab in the dashboard.
+task_routing:
+  coding:
+    preferred_backend: ollama
+    preferred_model: granite-code:8b
+    fallback_backends: [ollama]
+  reasoning:
+    preferred_backend: ollama
+    preferred_model: deepseek-r1:32b
+  chat:
+    preferred_backend: ollama
+    preferred_model: llama3.2
+  analysis:
+    preferred_backend: ollama
+    preferred_model: qwen3:14b
+  creative:
+    preferred_backend: ollama
+    preferred_model: dolphin-llama3
+  summarization:
+    preferred_backend: ollama
+    preferred_model: mistral
+
+# MCP servers can be declared here or added dynamically via the API.
+# The LangGraph agent auto-discovers tools from connected MCP servers.
+#
+# mcp_servers:
+#   filesystem:
+#     command: npx
+#     args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+#     enabled: true
+
+# Langfuse tracing (optional — set keys to enable observability).
+# Can also be set via LANGFUSE_SECRET_KEY / LANGFUSE_PUBLIC_KEY env vars.
+#
+# langfuse_secret_key: sk-lf-...
+# langfuse_public_key: pk-lf-...
+# langfuse_host: https://cloud.langfuse.com
+
+log_level: info

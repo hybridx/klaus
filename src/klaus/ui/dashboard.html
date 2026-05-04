@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>klaus</title>
+<style>
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --surface2: #232633;
+    --border: #2e3240; --text: #e4e6ed; --text2: #9399a8;
+    --accent: #6c8cff; --green: #34d399; --red: #f87171;
+    --orange: #fbbf24; --purple: #a78bfa;
+    --font: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    --mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+    --radius: 10px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: var(--font); background: var(--bg); color: var(--text); }
+  [hidden] { display: none !important; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "lit": "https://esm.run/lit@3",
+    "lit/decorators.js": "https://esm.run/lit@3/decorators.js"
+  }
+}
+</script>
+</head>
+<body>
+<klaus-app></klaus-app>
+
+<script type="module">
+import { LitElement, html, css } from 'lit';
+
+/* ── WebSocket ───────────────────────────────────────────────── */
+class WS {
+  constructor() { this._ws = null; this._listeners = new Set(); this._reconnectMs = 1000; this.connected = false; }
+  connect() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    this._ws = new WebSocket(`${proto}://${location.host}/api/events/ws`);
+    this._ws.onopen = () => { this.connected = true; this._reconnectMs = 1000; this._notify({ type: '_connected' }); };
+    this._ws.onclose = () => { this.connected = false; this._notify({ type: '_disconnected' }); setTimeout(() => this.connect(), this._reconnectMs); this._reconnectMs = Math.min(this._reconnectMs * 2, 10000); };
+    this._ws.onerror = () => {};
+    this._ws.onmessage = (e) => { try { this._notify(JSON.parse(e.data)); } catch {} };
+  }
+  send(msg) { if (this._ws?.readyState === 1) this._ws.send(JSON.stringify(msg)); }
+  on(fn) { this._listeners.add(fn); return () => this._listeners.delete(fn); }
+  _notify(msg) { for (const fn of this._listeners) fn(msg); }
+}
+const ws = new WS();
+
+/* ── <klaus-app> ─────────────────────────────────────────────── */
+class klausApp extends LitElement {
+  static styles = css`
+    :host { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+    header { display: flex; align-items: center; justify-content: space-between; padding: 12px 24px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    h1 { font-size: 17px; font-weight: 700; letter-spacing: -0.5px; }
+    h1 span { color: var(--accent); }
+    .status { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text2); }
+    .dot { width: 7px; height: 7px; border-radius: 50%; }
+    .dot.on { background: var(--green); } .dot.off { background: var(--red); }
+    nav { display: flex; gap: 2px; padding: 0 24px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    nav button { background: none; border: none; color: var(--text2); font-size: 13px; font-family: var(--font); padding: 10px 16px; cursor: pointer; border-bottom: 2px solid transparent; transition: all .15s; }
+    nav button:hover { color: var(--text); }
+    nav button.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .page { flex: 1; overflow: hidden; }
+  `;
+  static properties = { connected: { type: Boolean }, tab: { type: String } };
+  constructor() { super(); this.connected = false; this.tab = 'chat'; ws.on((m) => { if (m.type === '_connected') this.connected = true; if (m.type === '_disconnected') this.connected = false; }); ws.connect(); }
+  render() {
+    return html`
+      <header>
+        <h1><span>K</span>alus</h1>
+        <div class="status"><div class="dot ${this.connected ? 'on' : 'off'}"></div>${this.connected ? 'Connected' : 'Reconnecting...'}</div>
+      </header>
+      <nav>
+        ${['chat', 'models', 'routing', 'activity'].map(t =>
+          html`<button class="${this.tab === t ? 'active' : ''}" @click=${() => this.tab = t}>${t[0].toUpperCase() + t.slice(1)}</button>`
+        )}
+      </nav>
+      <div class="page">
+        ${this.tab === 'chat' ? html`<klaus-chat></klaus-chat>` : ''}
+        ${this.tab === 'models' ? html`<klaus-models></klaus-models>` : ''}
+        ${this.tab === 'routing' ? html`<klaus-routing></klaus-routing>` : ''}
+        ${this.tab === 'activity' ? html`<klaus-activity></klaus-activity>` : ''}
+      </div>
+    `;
+  }
+}
+customElements.define('klaus-app', klausApp);
+
+/* ── <klaus-chat> ────────────────────────────────────────────── */
+class klausChat extends LitElement {
+  static styles = css`
+    :host { display: flex; flex-direction: column; height: 100%; }
+    .messages { flex: 1; overflow-y: auto; padding: 20px 24px; display: flex; flex-direction: column; gap: 12px; }
+    .messages::-webkit-scrollbar { width: 4px; } .messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    .msg { max-width: 75%; padding: 12px 16px; border-radius: 12px; font-size: 14px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+    .msg.user { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+    .msg.assistant { align-self: flex-start; background: var(--surface); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+    .msg.system { align-self: center; background: none; color: var(--text2); font-size: 11px; font-family: var(--mono); padding: 2px 10px; }
+    .cursor { display: inline-block; width: 2px; height: 14px; background: var(--accent); animation: blink .6s step-end infinite; vertical-align: text-bottom; margin-left: 1px; }
+    @keyframes blink { 50% { opacity: 0; } }
+    .routed { font-size: 11px; color: var(--text2); margin-top: 6px; font-family: var(--mono); }
+    .tool-call { align-self: center; font-size: 11px; font-family: var(--mono); color: var(--orange); padding: 4px 12px; background: #2a2a1a; border-radius: 6px; }
+    .welcome { flex: 1; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 8px; color: var(--text2); }
+    .welcome h2 { font-size: 20px; color: var(--text); font-weight: 600; }
+    .welcome p { font-size: 13px; }
+    .bar { display: flex; gap: 8px; padding: 16px 24px; border-top: 1px solid var(--border); align-items: flex-end; flex-shrink: 0; }
+    .bar textarea { flex: 1; background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 10px; padding: 10px 14px; font-size: 14px; font-family: var(--font); resize: none; min-height: 42px; max-height: 120px; line-height: 1.5; }
+    .bar textarea:focus { outline: none; border-color: var(--accent); }
+    .bar button { background: var(--accent); color: #fff; border: none; border-radius: 10px; padding: 10px 20px; cursor: pointer; font-size: 13px; font-weight: 600; white-space: nowrap; }
+    .bar button:disabled { opacity: 0.4; cursor: not-allowed; }
+  `;
+  static properties = { messages: { type: Array }, streaming: { type: Boolean } };
+  constructor() {
+    super(); this.messages = []; this.streaming = false; this._currentAssistant = null;
+    this._unsub = ws.on((m) => this._onWsMsg(m));
+  }
+  disconnectedCallback() { super.disconnectedCallback(); this._unsub?.(); }
+  _onWsMsg(msg) {
+    if (msg.type === 'chat.token' && this._currentAssistant !== null) {
+      this._currentAssistant.content += msg.data.token;
+      this.requestUpdate(); this._scrollBottom();
+    } else if (msg.type === 'chat.done') {
+      if (this._currentAssistant) this._currentAssistant.done = true;
+      this._currentAssistant = null; this.streaming = false; this.requestUpdate();
+    } else if (msg.type === 'chat.error') {
+      if (this._currentAssistant) { this._currentAssistant.content += `\n[Error: ${msg.data.error}]`; this._currentAssistant.done = true; }
+      this._currentAssistant = null; this.streaming = false; this.requestUpdate();
+    } else if (msg.type === 'model.routed' && msg.data.chat_id) {
+      this.messages = [...this.messages, { role: 'system', content: `${msg.data.backend} / ${msg.data.model || 'default'} (${msg.data.reason})` }];
+      this._scrollBottom();
+    } else if (msg.type === 'mcp.tool_called' && msg.data.chat_id) {
+      const a = msg.data.args ? JSON.stringify(msg.data.args) : '';
+      this.messages = [...this.messages, { role: 'tool', content: `${msg.data.name}(${a})` }];
+      this._scrollBottom();
+    }
+  }
+  _send() {
+    const ta = this.renderRoot.querySelector('textarea');
+    const text = ta.value.trim();
+    if (!text || this.streaming) return;
+    const assistantMsg = { role: 'assistant', content: '', done: false };
+    this.messages = [...this.messages, { role: 'user', content: text }, assistantMsg];
+    this._currentAssistant = assistantMsg;
+    this.streaming = true;
+    ta.value = ''; ta.style.height = 'auto';
+    ws.send({ type: 'chat', messages: [{ role: 'user', content: text }], id: Date.now().toString() });
+    this._scrollBottom();
+  }
+  _onKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this._send(); }
+    const ta = e.target; ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
+  }
+  _scrollBottom() { requestAnimationFrame(() => { const el = this.renderRoot.querySelector('.messages'); if (el) el.scrollTop = el.scrollHeight; }); }
+  render() {
+    return html`
+      <div class="messages">
+        ${this.messages.length === 0 ? html`<div class="welcome"><h2>klaus</h2><p>Your local AI assistant. Start typing below.</p></div>` : ''}
+        ${this.messages.map(m => {
+          if (m.role === 'tool') return html`<div class="tool-call">${m.content}</div>`;
+          return html`<div class="msg ${m.role}">
+            ${m.content}${m.role === 'assistant' && !m.done ? html`<span class="cursor"></span>` : ''}
+          </div>`;
+        })}
+      </div>
+      <div class="bar">
+        <textarea rows="1" placeholder="Ask anything..." @keydown=${this._onKey}></textarea>
+        <button @click=${this._send} ?disabled=${this.streaming}>${this.streaming ? 'Thinking...' : 'Send'}</button>
+      </div>
+    `;
+  }
+}
+customElements.define('klaus-chat', klausChat);
+
+/* ── <klaus-models> ──────────────────────────────────────────── */
+class klausModels extends LitElement {
+  static styles = css`
+    :host { display: block; height: 100%; overflow-y: auto; padding: 24px; }
+    h2 { font-size: 15px; font-weight: 600; margin-bottom: 16px; color: var(--text2); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-bottom: 32px; }
+    .model { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
+    .model-name { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+    .model-meta { font-size: 12px; color: var(--text2); display: flex; gap: 8px; flex-wrap: wrap; }
+    .tag { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 5px; font-weight: 500; }
+    .t-local { background: #1a3a2a; color: var(--green); }
+    .t-cloud { background: #2a2540; color: var(--purple); }
+    .t-healthy { background: #1a3a2a; color: var(--green); }
+    .t-down { background: #3a2020; color: var(--red); }
+    .backend-head { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+    .backend-head h2 { margin: 0; }
+  `;
+  static properties = { backends: { type: Array }, allModels: { type: Object }, health: { type: Object } };
+  constructor() {
+    super(); this.backends = []; this.allModels = {}; this.health = {};
+    this._load(); ws.on((m) => { if (m.type?.startsWith('backend')) this._load(); });
+  }
+  async _load() {
+    try {
+      const [bR, mR, hR] = await Promise.all([fetch('/api/routing/backends'), fetch('/api/models'), fetch('/api/models/health')]);
+      this.backends = (await bR.json()).backends || [];
+      this.allModels = await mR.json();
+      this.health = await hR.json();
+    } catch {}
+  }
+  render() {
+    return html`
+      ${this.backends.map(b => html`
+        <div class="backend-head">
+          <h2>${b.name}</h2>
+          <span class="tag t-${b.locality}">${b.locality}</span>
+          <span class="tag ${this.health[b.name] ? 't-healthy' : 't-down'}">${this.health[b.name] ? 'healthy' : 'down'}</span>
+        </div>
+        <div class="grid">
+          ${(this.allModels[b.name] || []).map(m => html`
+            <div class="model">
+              <div class="model-name">${m.name}</div>
+              <div class="model-meta">
+                ${m.size ? html`<span>${m.size}</span>` : ''}
+                ${m.quantization ? html`<span>${m.quantization}</span>` : ''}
+                ${(m.capabilities || []).map(c => html`<span>${c}</span>`)}
+              </div>
+            </div>
+          `)}
+          ${(this.allModels[b.name] || []).length === 0 ? html`<div style="color:var(--text2);font-size:13px;">No models available</div>` : ''}
+        </div>
+      `)}
+    `;
+  }
+}
+customElements.define('klaus-models', klausModels);
+
+/* ── <klaus-routing> ─────────────────────────────────────────── */
+class klausRouting extends LitElement {
+  static styles = css`
+    :host { display: block; height: 100%; overflow-y: auto; padding: 24px; }
+    h2 { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+    p { font-size: 13px; color: var(--text2); margin-bottom: 20px; line-height: 1.5; }
+    .rules { display: flex; flex-direction: column; gap: 8px; margin-bottom: 28px; }
+    .rule { display: flex; align-items: center; justify-content: space-between; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; }
+    .rule-left { display: flex; align-items: center; gap: 12px; }
+    .rule-task { font-size: 14px; font-weight: 600; color: var(--accent); min-width: 100px; }
+    .rule-arrow { color: var(--text2); font-size: 14px; }
+    .rule-target { font-size: 13px; color: var(--text); }
+    .rule-target span { color: var(--text2); font-size: 12px; }
+    .rm { background: none; border: 1px solid var(--border); color: var(--red); border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 12px; }
+    .rm:hover { background: #3a2020; }
+    .add-form { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+    .add-form h3 { font-size: 13px; font-weight: 600; margin-bottom: 12px; }
+    .fields { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 8px; align-items: end; }
+    .field { display: flex; flex-direction: column; gap: 4px; }
+    .field label { font-size: 11px; color: var(--text2); font-weight: 500; }
+    .field input, .field select { background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 8px 10px; font-size: 13px; font-family: var(--font); }
+    .field input:focus, .field select:focus { outline: none; border-color: var(--accent); }
+    .add-btn { background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 13px; font-weight: 600; align-self: end; height: 36px; }
+    .empty { color: var(--text2); font-size: 13px; padding: 16px; text-align: center; }
+  `;
+  static properties = { rules: { type: Object }, backends: { type: Array }, models: { type: Object } };
+  constructor() {
+    super(); this.rules = {}; this.backends = []; this.models = {};
+    this._load(); ws.on((m) => { if (m.type?.startsWith('routing') || m.type?.startsWith('backend')) this._load(); });
+  }
+  async _load() {
+    try {
+      const [rR, bR, mR] = await Promise.all([fetch('/api/routing/rules'), fetch('/api/routing/backends'), fetch('/api/models')]);
+      this.rules = (await rR.json()).rules || {};
+      this.backends = (await bR.json()).backends || [];
+      this.models = await mR.json();
+    } catch {}
+  }
+  async _add() {
+    const root = this.renderRoot;
+    const task = root.querySelector('#rt').value.trim();
+    if (!task) return;
+    const backend = root.querySelector('#rb').value || null;
+    const model = root.querySelector('#rm').value.trim() || null;
+    await fetch('/api/routing/rules', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ task, preferred_backend: backend, preferred_model: model }) });
+    root.querySelector('#rt').value = '';
+    root.querySelector('#rm').value = '';
+    this._load();
+  }
+  async _rm(task) { await fetch(`/api/routing/rules/${task}`, { method: 'DELETE' }); this._load(); }
+  _onBackendChange() {
+    const backend = this.renderRoot.querySelector('#rb').value;
+    const modelSel = this.renderRoot.querySelector('#rm');
+    modelSel.innerHTML = '<option value="">Auto</option>';
+    const modelList = this.models[backend] || [];
+    for (const m of modelList) {
+      const opt = document.createElement('option');
+      opt.value = m.name; opt.textContent = m.name + (m.size ? ` (${m.size})` : '');
+      modelSel.appendChild(opt);
+    }
+  }
+  render() {
+    const entries = Object.entries(this.rules);
+    return html`
+      <h2>Task Routing</h2>
+      <p>Assign specific models to task types. When you send a message with a task type, klaus routes it to the assigned model. Without a rule, it picks the best local model automatically.</p>
+
+      <div class="rules">
+        ${entries.length === 0 ? html`<div class="empty">No rules yet. All tasks use local-first auto-selection.</div>` : ''}
+        ${entries.map(([t, r]) => html`
+          <div class="rule">
+            <div class="rule-left">
+              <span class="rule-task">${t}</span>
+              <span class="rule-arrow">&rarr;</span>
+              <span class="rule-target">${r.preferred_model || r.preferred_backend || 'auto'} <span>${r.preferred_backend ? `on ${r.preferred_backend}` : ''}</span></span>
+            </div>
+            <button class="rm" @click=${() => this._rm(t)}>Remove</button>
+          </div>
+        `)}
+      </div>
+
+      <div class="add-form">
+        <h3>Add a routing rule</h3>
+        <div class="fields">
+          <div class="field">
+            <label>Task type</label>
+            <input id="rt" placeholder="e.g. coding, writing, analysis">
+          </div>
+          <div class="field">
+            <label>Backend</label>
+            <select id="rb" @change=${this._onBackendChange}>
+              ${this.backends.map(b => html`<option value="${b.name}">${b.name} (${b.locality})</option>`)}
+            </select>
+          </div>
+          <div class="field">
+            <label>Model</label>
+            <select id="rm">
+              <option value="">Auto</option>
+            </select>
+          </div>
+          <button class="add-btn" @click=${this._add}>Add Rule</button>
+        </div>
+      </div>
+    `;
+  }
+  firstUpdated() { this._onBackendChange(); }
+  updated(changed) { if (changed.has('models') || changed.has('backends')) this._onBackendChange(); }
+}
+customElements.define('klaus-routing', klausRouting);
+
+/* ── <klaus-activity> ────────────────────────────────────────── */
+class klausActivity extends LitElement {
+  static styles = css`
+    :host { display: block; height: 100%; overflow-y: auto; padding: 24px; }
+    h2 { font-size: 15px; font-weight: 600; margin-bottom: 16px; }
+    .events { display: flex; flex-direction: column; gap: 4px; }
+    .ev { display: flex; gap: 12px; padding: 8px 12px; border-radius: 6px; font-size: 12px; animation: fi .2s ease; }
+    .ev:nth-child(odd) { background: var(--surface); }
+    @keyframes fi { from { opacity: 0; } }
+    .ev-time { color: var(--text2); font-family: var(--mono); font-size: 11px; white-space: nowrap; min-width: 70px; }
+    .ev-type { font-family: var(--mono); font-size: 11px; padding: 2px 8px; border-radius: 4px; background: var(--surface2); color: var(--accent); white-space: nowrap; }
+    .ev-data { color: var(--text2); word-break: break-word; flex: 1; font-size: 12px; }
+    .empty { color: var(--text2); font-size: 13px; text-align: center; padding: 40px 0; }
+  `;
+  static properties = { events: { type: Array } };
+  constructor() {
+    super(); this.events = [];
+    ws.on((m) => {
+      if (m.type?.startsWith('_') || m.type === 'pong' || m.type === 'chat.token') return;
+      this.events = [m, ...this.events].slice(0, 200);
+    });
+  }
+  render() {
+    return html`
+      <h2>Activity Log</h2>
+      <div class="events">
+        ${this.events.length === 0 ? html`<div class="empty">No events yet. Events appear as you interact with klaus.</div>` : ''}
+        ${this.events.map(e => {
+          const t = e.ts ? new Date(e.ts * 1000).toLocaleTimeString([], { hour12: false }) : '';
+          const d = e.data ? Object.entries(e.data).map(([k,v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : v}`).join('  ') : '';
+          return html`<div class="ev"><span class="ev-time">${t}</span><span class="ev-type">${e.type}</span><span class="ev-data">${d}</span></div>`;
+        })}
+      </div>
+    `;
+  }
+}
+customElements.define('klaus-activity', klausActivity);
+</script>
+</body>
+</html>

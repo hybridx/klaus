@@ -1,0 +1,21 @@
+---
+description: Use Podman instead of Docker for all container operations
+alwaysApply: true
+---
+
+# Use Podman, not Docker
+
+- Always use `podman` and `podman-compose` instead of `docker` and `docker compose`.
+- In Dockerfiles, Compose files, and documentation, keep the file names standard (`Dockerfile`, `docker-compose.yml`) but all CLI commands must reference `podman`.
+- When writing shell commands, scripts, or CI pipelines, substitute `podman` for `docker` everywhere.
+- Use `podman machine` for managing the Podman VM on macOS.
+
+```bash
+# ✅ Correct
+podman build -t klaus .
+podman-compose up -d
+
+# ❌ Wrong
+docker build -t klaus .
+docker compose up -d
+```

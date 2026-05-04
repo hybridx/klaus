@@ -1,0 +1,21 @@
+---
+description: Keep README.md in sync when making significant changes
+alwaysApply: true
+---
+
+# Keep README.md Updated
+
+When a change affects any of the following, update `README.md` to reflect it:
+
+- **New or removed dependencies** — update prerequisites or config examples
+- **New model backends** — add to the architecture diagram, config example, and project structure
+- **New API endpoints** — add curl examples under the API section
+- **New superpowers or MCP integrations** — mention in relevant sections
+- **Config format changes** — update the YAML example
+- **CLI or command changes** — update the Quick Start and Common Commands sections
+- **New files or directories** — update the Project Structure tree
+- **Architecture changes** — update the diagram and link to `docs/ARCHITECTURE.md`
+
+Also update `CONTRIBUTING.md` if the change affects how contributors set up, test, or extend the project.
+
+Do NOT update the README for internal refactors, test-only changes, or lint fixes that don't affect the user-facing surface.
