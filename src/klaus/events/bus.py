@@ -1,4 +1,4 @@
-"""Event bus — broadcasts system activity to connected WebSocket clients."""
+"""Event bus — broadcasts system activity to connected SSE clients."""
 
 from __future__ import annotations
 
@@ -11,8 +11,6 @@ from collections.abc import AsyncIterator
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 
-from fastapi import WebSocket
-
 logger = logging.getLogger(__name__)
 
 
@@ -22,6 +20,7 @@ class EventType(StrEnum):
     CHAT_TOKEN = "chat.token"
     CHAT_ERROR = "chat.error"
     CHAT_DONE = "chat.done"
+    CHAT_STATUS = "chat.status"
     MODEL_ROUTED = "model.routed"
     BACKEND_HEALTH = "backend.health"
     BACKEND_REGISTERED = "backend.registered"
@@ -34,6 +33,14 @@ class EventType(StrEnum):
     TOOL_RESULT = "tool.result"
     SUBTASK_START = "subtask.start"
     SUBTASK_DONE = "subtask.done"
+    PLAN_CREATED = "plan.created"
+    PLAN_AWAITING_APPROVAL = "plan.awaiting_approval"
+    PLAN_APPROVED = "plan.approved"
+    PLAN_REVISED = "plan.revised"
+    PLAN_REJECTED = "plan.rejected"
+    PLAN_STEP_START = "plan.step_start"
+    PLAN_STEP_DONE = "plan.step_done"
+    PLAN_CONSOLIDATED = "plan.consolidated"
     ROUTING_RULE_SET = "routing.rule_set"
     ROUTING_RULE_REMOVED = "routing.rule_removed"
 
@@ -52,84 +59,61 @@ class Event:
 
 
 class EventBus:
-    """Fan-out event bus with WebSocket broadcast.
+    """Fan-out event bus with SSE streaming.
 
-    - System events are broadcast to all connected WS clients
+    - System events (emit) are broadcast to ALL connected SSE clients
+    - Per-session events (send_to_session) target a specific session's queue
     - Keeps a rolling history for clients that connect late
-    - Supports targeted sends for per-client streams (chat tokens)
     """
 
     MAX_HISTORY = 200
 
     def __init__(self) -> None:
-        self._subscribers: list[asyncio.Queue[Event]] = []
-        self._ws_clients: set[WebSocket] = set()
+        self._sse_clients: dict[str, asyncio.Queue[Event]] = {}
         self._history: deque[Event] = deque(maxlen=self.MAX_HISTORY)
 
     def emit(self, event_type: EventType, data: dict | None = None) -> None:
+        """Broadcast an event to ALL connected SSE clients."""
         event = Event(type=event_type, data=data or {})
         self._history.append(event)
 
-        dead_queues: list[asyncio.Queue] = []
-        for q in self._subscribers:
+        dead: list[str] = []
+        for sid, q in self._sse_clients.items():
             try:
                 q.put_nowait(event)
             except asyncio.QueueFull:
-                dead_queues.append(q)
-        for q in dead_queues:
-            self._subscribers.remove(q)
+                dead.append(sid)
+        for sid in dead:
+            self._sse_clients.pop(sid, None)
 
-        self._broadcast_ws(event)
-
-    def _broadcast_ws(self, event: Event) -> None:
-        if not self._ws_clients:
-            return
-        msg = event.to_json()
-        dead: set[WebSocket] = set()
-        for ws in self._ws_clients:
-            try:
-                asyncio.get_event_loop().create_task(self._ws_send(ws, msg, dead))
-            except RuntimeError:
-                dead.add(ws)
-        self._ws_clients -= dead
-
-    @staticmethod
-    async def _ws_send(ws: WebSocket, msg: str, dead: set[WebSocket]) -> None:
-        try:
-            await ws.send_text(msg)
-        except Exception:
-            dead.add(ws)
-
-    def add_ws(self, ws: WebSocket) -> None:
-        self._ws_clients.add(ws)
-        logger.debug("WebSocket client connected (%d total)", len(self._ws_clients))
-
-    def remove_ws(self, ws: WebSocket) -> None:
-        self._ws_clients.discard(ws)
-        logger.debug("WebSocket client disconnected (%d total)", len(self._ws_clients))
-
-    async def send_to_ws(self, ws: WebSocket, event_type: EventType, data: dict) -> None:
-        """Send an event to a specific WebSocket client (e.g. chat tokens)."""
+    async def send_to_session(
+        self, session_id: str, event_type: EventType, data: dict,
+    ) -> None:
+        """Send an event to a specific session's SSE stream (e.g. chat tokens)."""
         event = Event(type=event_type, data=data)
-        try:
-            await ws.send_text(event.to_json())
-        except Exception:
-            self.remove_ws(ws)
+        q = self._sse_clients.get(session_id)
+        if q is not None:
+            try:
+                q.put_nowait(event)
+            except asyncio.QueueFull:
+                logger.warning("SSE queue full for session %s, dropping event", session_id)
 
-    async def subscribe(self) -> AsyncIterator[Event]:
-        q: asyncio.Queue[Event] = asyncio.Queue(maxsize=256)
-        self._subscribers.append(q)
-        try:
-            while True:
-                event = await q.get()
-                yield event
-        finally:
-            self._subscribers.remove(q)
+    def add_sse(self, session_id: str) -> asyncio.Queue[Event]:
+        """Register an SSE client and return its event queue."""
+        q: asyncio.Queue[Event] = asyncio.Queue(maxsize=512)
+        self._sse_clients[session_id] = q
+        logger.debug("SSE client connected: %s (%d total)", session_id, len(self._sse_clients))
+        return q
+
+    def remove_sse(self, session_id: str) -> None:
+        """Unregister an SSE client."""
+        self._sse_clients.pop(session_id, None)
+        logger.debug("SSE client disconnected: %s (%d total)", session_id, len(self._sse_clients))
 
     def recent(self, n: int = 50) -> list[dict]:
         events = list(self._history)[-n:]
-        return [asdict(e) for e in events]
+        return [e.to_dict() for e in events]
 
     @property
     def subscriber_count(self) -> int:
-        return len(self._ws_clients)
+        return len(self._sse_clients)

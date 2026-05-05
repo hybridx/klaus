@@ -111,7 +111,7 @@ klaus/
 │   ├── api/                    # FastAPI routes
 │   │   └── routes/             # Endpoint modules
 │   ├── config/                 # Pydantic settings, YAML loader
-│   ├── events/                 # WebSocket event bus
+│   ├── events/                 # SSE event bus
 │   ├── mcp/                    # MCP server manager
 │   ├── memory/                 # Memory tree, index, store
 │   ├── models/                 # Model registry + backends
@@ -124,7 +124,7 @@ klaus/
 ├── ui/                         # React frontend
 │   ├── src/
 │   │   ├── components/         # Layout, Sidebar, Markdown
-│   │   ├── hooks/              # useWebSocket, useTheme
+│   │   ├── hooks/              # useEventStream, useTheme
 │   │   └── pages/              # Chat, Knowledge, Flow, Models, ...
 │   ├── vite.config.ts
 │   └── package.json

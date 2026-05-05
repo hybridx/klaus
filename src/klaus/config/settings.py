@@ -47,10 +47,40 @@ class TaskRoutingRule(BaseModel):
 class MCPServerConfig(BaseModel):
     """Configuration for a pre-registered MCP server."""
 
-    command: str = Field(description="Command to launch the MCP server")
+    command: str = Field(default="", description="Command to launch the MCP server")
     args: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
     enabled: bool = Field(default=True)
+    url: str | None = Field(default=None, description="SSE/HTTP transport URL (alternative to command)")
+
+
+def load_mcp_json(path: str | Path) -> dict[str, MCPServerConfig]:
+    """Load MCP servers from a Cursor/Claude-style mcp.json file.
+
+    Supports the standard format:
+        { "mcpServers": { "name": { "command": "...", "args": [...] } } }
+    """
+    import json
+
+    p = Path(path)
+    if not p.exists():
+        return {}
+
+    data = json.loads(p.read_text())
+    servers_raw = data.get("mcpServers", {})
+    result: dict[str, MCPServerConfig] = {}
+
+    for name, cfg in servers_raw.items():
+        if not isinstance(cfg, dict):
+            continue
+        result[name] = MCPServerConfig(
+            command=cfg.get("command", ""),
+            args=cfg.get("args", []),
+            env=cfg.get("env", {}),
+            enabled=True,
+            url=cfg.get("url"),
+        )
+    return result
 
 
 class DatabaseConfig(BaseModel):
@@ -62,6 +92,26 @@ class DatabaseConfig(BaseModel):
     )
     pool_min: int = Field(default=2, description="Minimum pool connections")
     pool_max: int = Field(default=10, description="Maximum pool connections")
+
+
+class OrchestratorConfig(BaseModel):
+    """Multi-agent orchestrator configuration."""
+
+    planner_backend: str | None = Field(
+        default=None, description="Backend for the planner model (None = use default)"
+    )
+    planner_model: str | None = Field(
+        default=None, description="Model for planning/decomposition (None = backend default)"
+    )
+    parallel_execution: bool = Field(
+        default=True, description="Execute independent tasks in parallel"
+    )
+    md_tools_dir: str = Field(
+        default="data/tools", description="Directory for MD-based tool definitions"
+    )
+    complexity_threshold: int = Field(
+        default=2, description="Min sentence count to trigger orchestration instead of single-agent"
+    )
 
 
 class ServerConfig(BaseModel):
@@ -87,11 +137,16 @@ class Settings(BaseSettings):
         },
     )
     mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
+    mcp_config_files: list[str] = Field(
+        default_factory=list,
+        description="Paths to mcp.json files (Cursor/Claude format) to auto-load",
+    )
     default_backend: str = Field(default="ollama")
     task_routing: dict[str, TaskRoutingRule] = Field(
         default_factory=dict,
         description="Task category -> routing rule. E.g. 'chat', 'coding', 'summarization'",
     )
+    orchestrator: OrchestratorConfig = Field(default_factory=OrchestratorConfig)
     prefer_local: bool = Field(
         default=True,
         description="When no explicit routing, prefer local backends over cloud",

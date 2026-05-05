@@ -39,12 +39,12 @@ def _to_lc_messages(messages: list[ChatMessage]) -> list:
 
 
 _RECOMMENDED_MODELS = [
-    ("Qwen/Qwen3-235B-A22B", ["chat", "code", "reasoning"]),
-    ("meta-llama/Llama-3.3-70B-Instruct", ["chat", "code"]),
-    ("mistralai/Mistral-Small-24B-Instruct-2501", ["chat", "code"]),
+    ("Qwen/Qwen3-235B-A22B", ["chat", "code", "reasoning", "tools"]),
+    ("meta-llama/Llama-3.3-70B-Instruct", ["chat", "code", "tools"]),
+    ("mistralai/Mistral-Small-24B-Instruct-2501", ["chat", "code", "tools"]),
     ("google/gemma-3-27b-it", ["chat", "vision"]),
-    ("NousResearch/Hermes-3-Llama-3.1-8B", ["chat", "code"]),
-    ("microsoft/Phi-4-mini-instruct", ["chat", "code"]),
+    ("NousResearch/Hermes-3-Llama-3.1-8B", ["chat", "code", "tools"]),
+    ("microsoft/Phi-4-mini-instruct", ["chat", "code", "tools"]),
 ]
 
 

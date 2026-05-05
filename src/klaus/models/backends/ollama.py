@@ -28,9 +28,13 @@ def _to_lc_messages(messages: list[ChatMessage]) -> list:
         if m.images and m.role == "user":
             parts: list[dict] = [{"type": "text", "text": m.content}]
             for img_b64 in m.images:
+                data_url = (
+                    img_b64 if img_b64.startswith("data:")
+                    else f"data:image/jpeg;base64,{img_b64}"
+                )
                 parts.append({
                     "type": "image_url",
-                    "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"},
+                    "image_url": data_url,
                 })
             result.append(HumanMessage(content=parts))
         else:
@@ -105,6 +109,34 @@ class OllamaBackend:
             if chunk.content:
                 yield chunk.content if isinstance(chunk.content, str) else str(chunk.content)
 
+    async def _check_capabilities(self, model_name: str) -> dict[str, bool]:
+        """Check model capabilities by inspecting its metadata from /api/show.
+
+        Uses model_info keys as the source of truth — the same data that the
+        Ollama desktop app uses to determine multimodal support.
+        """
+        caps = {"tools": False, "vision": False}
+        try:
+            resp = await self._get_http().post(
+                "/api/show", json={"name": model_name}
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+            template = data.get("template", "")
+            if ".Tools" in template:
+                caps["tools"] = True
+
+            model_info = data.get("model_info") or {}
+            info_keys_lower = " ".join(model_info.keys()).lower()
+            if "vision" in info_keys_lower or "clip" in info_keys_lower or "projector" in info_keys_lower:
+                caps["vision"] = True
+
+        except Exception:
+            pass
+
+        return caps
+
     async def list_models(self) -> list[ModelInfo]:
         try:
             resp = await self._get_http().get("/api/tags")
@@ -122,13 +154,21 @@ class OllamaBackend:
             if size_bytes:
                 gb = size_bytes / (1024**3)
                 size_str = f"{gb:.1f}GB" if gb >= 1 else f"{size_bytes / (1024**2):.0f}MB"
+
+            detected = await self._check_capabilities(m["name"])
+            caps = ["chat"]
+            if detected["tools"]:
+                caps.append("tools")
+            if detected["vision"]:
+                caps.append("vision")
+
             models.append(
                 ModelInfo(
                     name=m["name"],
                     backend="ollama",
                     size=size_str,
                     quantization=details.get("quantization_level"),
-                    capabilities=["chat"],
+                    capabilities=caps,
                 )
             )
         return models

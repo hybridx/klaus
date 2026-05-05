@@ -43,13 +43,16 @@ class AppState:
         self.superpowers = SuperpowerRegistry(self.memory)
         return self.superpowers
 
-    def init_agent(self) -> None:
+    def init_agent(self, orchestrator_config: dict | None = None, md_agents=None) -> None:
         self.agent = klausAgent(
             self.model_registry,
             self.mcp_manager,
             memory=self.memory,
             superpowers=self.superpowers,
             db=self.db,
+            task_router=self.task_router,
+            orchestrator_config=orchestrator_config,
+            md_agents=md_agents,
         )
 
 

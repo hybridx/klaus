@@ -81,6 +81,8 @@ class MCPServerManager:
 
         return entry
 
+    CONNECTION_TIMEOUT = 15  # seconds
+
     async def connect(self, name: str) -> None:
         entry = self._get(name)
         if entry.status == MCPServerStatus.CONNECTED:
@@ -98,11 +100,13 @@ class MCPServerManager:
             entry._write = write_stream
 
             session = ClientSession(read_stream, write_stream)
-            await session.initialize()
+            await asyncio.wait_for(session.initialize(), timeout=self.CONNECTION_TIMEOUT)
             entry._session = session
             entry.status = MCPServerStatus.CONNECTED
 
-            tools_result = await session.list_tools()
+            tools_result = await asyncio.wait_for(
+                session.list_tools(), timeout=self.CONNECTION_TIMEOUT,
+            )
             entry.tools = [
                 MCPToolInfo(
                     name=t.name,
@@ -117,7 +121,7 @@ class MCPServerManager:
                 name,
                 len(entry.tools),
             )
-        except Exception as exc:
+        except BaseException as exc:
             entry.status = MCPServerStatus.ERROR
             entry.error = str(exc)
             logger.error("Failed to connect to MCP server '%s': %s", name, exc)

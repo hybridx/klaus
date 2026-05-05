@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowUp, Cpu, ChevronRight, ImagePlus, X, ChevronDown, Loader2, Wrench } from 'lucide-react';
+import { ArrowUp, Cpu, ChevronRight, ImagePlus, X, ChevronDown, Loader2, Wrench, Check, XCircle, Pencil, Bot } from 'lucide-react';
 import clsx from 'clsx';
-import type { WsMessage } from '../hooks/useWebSocket';
+import type { SSEMessage } from '../hooks/useEventStream';
+import { postChat, postPlanAction } from '../hooks/useEventStream';
 import type { Page } from '../App';
 import Markdown from '../components/Markdown';
 
@@ -31,26 +32,40 @@ interface SubtaskInfo {
   model: string;
 }
 
+interface PlanStepInfo {
+  index: number;
+  description: string;
+  task_type: string;
+  agent?: string;
+  backend: string;
+  model: string;
+  status: 'pending' | 'running' | 'done';
+  result_preview?: string;
+}
+
 interface ChatMsg {
-  role: 'user' | 'assistant' | 'system' | 'tool' | 'subtask-divider';
+  role: 'user' | 'assistant' | 'system' | 'tool' | 'subtask-divider' | 'plan';
   content: string;
   images?: string[];
   done?: boolean;
   routing?: RoutingInfo;
   toolCall?: ToolCallInfo;
   subtask?: SubtaskInfo;
+  planSteps?: PlanStepInfo[];
+  planStatus?: 'awaiting' | 'approved' | 'rejected' | 'executing';
+  planAgents?: Array<{ name: string; description: string; capabilities: string[] }>;
 }
 
 interface ModelOption {
   name: string;
   backend: string;
+  capabilities?: string[];
 }
 
 interface Props {
   ws: {
     connected: boolean;
-    send: (d: Record<string, unknown>) => void;
-    on: (fn: (m: WsMessage) => void) => () => void;
+    on: (fn: (m: SSEMessage) => void) => () => void;
   };
   setPage: (p: Page) => void;
   sessionId: string;
@@ -68,9 +83,29 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
+interface StatusStep {
+  step: string;
+  detail: string;
+  ts: number;
+}
+
+const STATUS_ICONS: Record<string, string> = {
+  classifying: '🔍',
+  classified: '🏷️',
+  splitting: '✂️',
+  routing: '🔀',
+  routed: '✅',
+  memory: '🧠',
+  generating: '⚡',
+  saving: '💾',
+  tool: '🔧',
+  tool_done: '✅',
+};
+
 export default function Chat({ ws, setPage, sessionId }: Props) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [streaming, setStreaming] = useState(false);
+  const [statusSteps, setStatusSteps] = useState<StatusStep[]>([]);
   const [models, setModels] = useState<ModelOption[]>([]);
   const [selectedModel, setSelectedModel] = useState<ModelOption | null>({ name: 'Auto', backend: '' });
   const [showModelPicker, setShowModelPicker] = useState(false);
@@ -83,24 +118,71 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const modelPickerRef = useRef<HTMLDivElement>(null);
 
-  // Load conversation history on mount
+  // Load conversation history on mount — auto-retry if last msg was user (interrupted generation)
+  const pendingRetryRef = useRef<string | null>(null);
+
   useEffect(() => {
     fetch(`/api/conversations/${sessionId}`)
       .then((r) => r.json())
       .then((data) => {
-        const history: ChatMsg[] = (data.messages ?? [])
-          .filter((m: { role: string }) => m.role === 'user' || m.role === 'assistant')
-          .map((m: { role: string; content: string; model?: string; backend?: string }) => ({
+        const raw = (data.messages ?? []).filter(
+          (m: { role: string }) => m.role === 'user' || m.role === 'assistant',
+        );
+        const history: ChatMsg[] = raw.map(
+          (m: { role: string; content: string; model?: string; backend?: string }) => ({
             role: m.role as ChatMsg['role'],
             content: m.content,
             done: true,
             routing: m.model ? { model: m.model, backend: m.backend || '', reason: '' } : undefined,
-          }));
-        if (history.length > 0) setMessages(history);
+          }),
+        );
+
+        if (history.length > 0) {
+          const last = raw[raw.length - 1];
+          if (last.role === 'user') {
+            const assistant: ChatMsg = { role: 'assistant', content: '', done: false };
+            currentRef.current = assistant;
+            setMessages([...history, assistant]);
+            setStreaming(true);
+            pendingRetryRef.current = last.content;
+          } else {
+            setMessages(history);
+          }
+        }
         setLoaded(true);
       })
       .catch(() => setLoaded(true));
   }, [sessionId]);
+
+  // When WS connects and there's a pending retry, re-send the last user message
+  const retrySent = useRef(false);
+  useEffect(() => {
+    if (retrySent.current) return;
+
+    const trySend = () => {
+      if (!pendingRetryRef.current) return;
+      const text = pendingRetryRef.current;
+      pendingRetryRef.current = null;
+      retrySent.current = true;
+
+      postChat({
+        messages: [{ role: 'user', content: text }],
+        id: sessionId,
+        retry: true,
+      }).catch(console.error);
+    };
+
+    if (ws.connected && pendingRetryRef.current) {
+      trySend();
+      return;
+    }
+
+    return ws.on((msg) => {
+      if (msg.type === '_connected') {
+        setTimeout(trySend, 100);
+      }
+    });
+  }, [ws, sessionId]);
 
   useEffect(() => {
     fetch('/api/models')
@@ -108,8 +190,8 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
       .then((data) => {
         const opts: ModelOption[] = [];
         for (const [backend, backendModels] of Object.entries(data)) {
-          for (const m of backendModels as Array<{ name: string }>) {
-            opts.push({ name: m.name, backend });
+          for (const m of backendModels as Array<{ name: string; capabilities?: string[] }>) {
+            opts.push({ name: m.name, backend, capabilities: m.capabilities });
           }
         }
         setModels(opts);
@@ -135,12 +217,20 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
 
   useEffect(() => {
     return ws.on((msg) => {
-      if (msg.type === 'chat.token' && currentRef.current) {
+      if (msg.type === 'chat.status' && msg.data?.chat_id) {
+        const d = msg.data;
+        setStatusSteps((prev) => [
+          ...prev,
+          { step: d.step as string, detail: d.detail as string, ts: Date.now() },
+        ]);
+        scrollBottom();
+      } else if (msg.type === 'chat.token' && currentRef.current) {
         if (pendingRoutingRef.current && !currentRef.current.routing) {
           currentRef.current.routing = pendingRoutingRef.current;
           pendingRoutingRef.current = null;
         }
         currentRef.current.content += (msg.data?.token as string) ?? '';
+        setStatusSteps([]);
         setMessages((prev) => [...prev]);
         scrollBottom();
       } else if (msg.type === 'chat.done') {
@@ -148,6 +238,7 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
         currentRef.current = null;
         pendingRoutingRef.current = null;
         setStreaming(false);
+        setStatusSteps([]);
         setMessages((prev) => [...prev]);
       } else if (msg.type === 'chat.error') {
         if (currentRef.current) {
@@ -157,6 +248,7 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
         currentRef.current = null;
         pendingRoutingRef.current = null;
         setStreaming(false);
+        setStatusSteps([]);
         setMessages((prev) => [...prev]);
       } else if (msg.type === 'model.routed' && msg.data?.chat_id) {
         const d = msg.data;
@@ -234,6 +326,99 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
         }
         currentRef.current = null;
         setMessages((prev) => [...prev]);
+      } else if (msg.type === 'plan.created' && msg.data?.chat_id) {
+        const plan = (msg.data.plan as Array<{
+          index: number; description: string; task_type: string;
+          agent?: string; backend: string; model: string;
+        }>).map((s) => ({
+          ...s,
+          status: 'pending' as const,
+        }));
+        const agents = (msg.data.agents || []) as Array<{
+          name: string; description: string; capabilities: string[];
+        }>;
+        setStatusSteps([]);
+        setMessages((prev) => {
+          const cleaned = prev.filter(
+            (m) => !(m.role === 'assistant' && !m.done && !m.content),
+          );
+          return [...cleaned, { role: 'plan', content: '', planSteps: plan, planAgents: agents }];
+        });
+        scrollBottom();
+      } else if (msg.type === 'plan.awaiting_approval' && msg.data?.chat_id) {
+        setMessages((prev) => {
+          const copy = [...prev];
+          const planMsg = copy.find((m) => m.role === 'plan');
+          if (planMsg) planMsg.planStatus = 'awaiting';
+          return copy;
+        });
+        scrollBottom();
+      } else if (msg.type === 'plan.approved' && msg.data?.chat_id) {
+        setMessages((prev) => {
+          const copy = [...prev];
+          const planMsg = copy.find((m) => m.role === 'plan');
+          if (planMsg) planMsg.planStatus = 'executing';
+          return copy;
+        });
+      } else if (msg.type === 'plan.rejected' && msg.data?.chat_id) {
+        setMessages((prev) => {
+          const copy = [...prev];
+          const planMsg = copy.find((m) => m.role === 'plan');
+          if (planMsg) planMsg.planStatus = 'rejected';
+          return copy;
+        });
+      } else if (msg.type === 'plan.revised' && msg.data?.chat_id) {
+        const newPlan = (msg.data.plan as Array<{
+          index: number; description: string; task_type: string;
+          agent?: string; backend: string; model: string;
+        }>).map((s) => ({
+          ...s,
+          status: 'pending' as const,
+        }));
+        setMessages((prev) => {
+          const copy = [...prev];
+          const planMsg = copy.find((m) => m.role === 'plan');
+          if (planMsg) {
+            planMsg.planSteps = newPlan;
+            planMsg.planStatus = 'executing';
+          }
+          return copy;
+        });
+      } else if (msg.type === 'plan.step_start' && msg.data?.chat_id) {
+        const idx = msg.data.index as number;
+        setMessages((prev) => {
+          const copy = [...prev];
+          const planMsg = copy.find((m) => m.role === 'plan');
+          if (planMsg) {
+            planMsg.planStatus = 'executing';
+            if (planMsg.planSteps) {
+              planMsg.planSteps = planMsg.planSteps.map((s) =>
+                s.index === idx ? { ...s, status: 'running' as const } : s,
+              );
+            }
+          }
+          return copy;
+        });
+        scrollBottom();
+      } else if (msg.type === 'plan.step_done' && msg.data?.chat_id) {
+        const idx = msg.data.index as number;
+        const preview = (msg.data.result_preview as string) || '';
+        setMessages((prev) => {
+          const copy = [...prev];
+          const planMsg = copy.find((m) => m.role === 'plan');
+          if (planMsg?.planSteps) {
+            planMsg.planSteps = planMsg.planSteps.map((s) =>
+              s.index === idx ? { ...s, status: 'done' as const, result_preview: preview } : s,
+            );
+          }
+          return copy;
+        });
+        scrollBottom();
+      } else if (msg.type === 'plan.consolidated' && msg.data?.chat_id) {
+        const assistant: ChatMsg = { role: 'assistant', content: '', done: false };
+        currentRef.current = assistant;
+        setMessages((prev) => [...prev, assistant]);
+        scrollBottom();
       }
     });
   }, [ws, scrollBottom]);
@@ -272,23 +457,18 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
       assistant,
     ]);
     setStreaming(true);
+    setStatusSteps([]);
     inputRef.current!.value = '';
     inputRef.current!.style.height = 'auto';
 
-    const payload: Record<string, unknown> = {
-      type: 'chat',
+    postChat({
       messages: [{ role: 'user', content: text || '' }],
       id: sessionId,
-    };
-    if (imageData.length > 0) {
-      payload.images = imageData;
-    }
-    if (selectedModel && selectedModel.backend) {
-      payload.model = selectedModel.name;
-      payload.backend = selectedModel.backend;
-    }
+      images: imageData.length > 0 ? imageData : undefined,
+      model: selectedModel?.backend ? selectedModel.name : undefined,
+      backend: selectedModel?.backend || undefined,
+    }).catch(console.error);
 
-    ws.send(payload);
     setImages([]);
     scrollBottom();
   };
@@ -372,10 +552,132 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
                 );
               }
 
+              if (m.role === 'plan' && m.planSteps) {
+                const isAwaiting = m.planStatus === 'awaiting';
+                return (
+                  <div key={i} className="max-w-[90%] mb-2">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <div className="text-[10px] font-semibold uppercase tracking-wider
+                                      text-stone-400 dark:text-stone-500">
+                        Execution Plan
+                      </div>
+                      {isAwaiting && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 font-medium">
+                          Awaiting approval
+                        </span>
+                      )}
+                      {m.planStatus === 'executing' && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium flex items-center gap-1">
+                          <Loader2 size={8} className="animate-spin" /> Executing
+                        </span>
+                      )}
+                      {m.planStatus === 'rejected' && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-medium">
+                          Rejected
+                        </span>
+                      )}
+                    </div>
+                    <div className="border border-border rounded-lg bg-surface overflow-hidden divide-y divide-border">
+                      {m.planSteps.map((step) => (
+                        <div key={step.index} className="flex items-start gap-2 px-3 py-2">
+                          <div className="mt-0.5 shrink-0">
+                            {step.status === 'done' && (
+                              <span className="text-[11px] text-emerald-500">&#10003;</span>
+                            )}
+                            {step.status === 'running' && (
+                              <Loader2 size={11} className="animate-spin text-amber-500" />
+                            )}
+                            {step.status === 'pending' && (
+                              <span className="inline-block w-2.5 h-2.5 rounded-full border border-stone-300 dark:border-stone-600" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className={clsx(
+                              'text-[12px]',
+                              step.status === 'done'
+                                ? 'text-stone-500 dark:text-stone-400'
+                                : step.status === 'running'
+                                  ? 'text-stone-800 dark:text-stone-200 font-medium'
+                                  : 'text-stone-400 dark:text-stone-600',
+                            )}>
+                              {step.description}
+                            </div>
+                            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                              <span className="text-[9px] px-1.5 py-0.5 rounded-full
+                                               bg-stone-100 dark:bg-stone-800
+                                               text-stone-500 dark:text-stone-400 uppercase font-semibold">
+                                {step.task_type}
+                              </span>
+                              {step.agent && (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded-full
+                                                 bg-violet-100 dark:bg-violet-900/30
+                                                 text-violet-600 dark:text-violet-400 font-medium flex items-center gap-0.5">
+                                  <Bot size={8} /> {step.agent}
+                                </span>
+                              )}
+                              <span className="text-[9px] text-stone-400 dark:text-stone-500">
+                                {step.model} on {step.backend}
+                              </span>
+                            </div>
+                            {step.status === 'done' && step.result_preview && (
+                              <p className="text-[10px] text-stone-400 dark:text-stone-500 mt-1 line-clamp-2">
+                                {step.result_preview}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {/* Approval controls */}
+                    {isAwaiting && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <button
+                          onClick={() => postPlanAction(sessionId, 'approve').catch(console.error)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium
+                                     bg-emerald-600 hover:bg-emerald-700 text-white transition-colors"
+                        >
+                          <Check size={12} /> Approve
+                        </button>
+                        <button
+                          onClick={() => {
+                            const reason = prompt('Why reject this plan?') || '';
+                            postPlanAction(sessionId, 'reject', { reason }).catch(console.error);
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium
+                                     bg-red-600 hover:bg-red-700 text-white transition-colors"
+                        >
+                          <XCircle size={12} /> Reject
+                        </button>
+                        <button
+                          onClick={() => {
+                            const raw = prompt(
+                              'Edit plan (JSON array of edits):\n'
+                              + 'e.g. [{"index": 0, "description": "new description"}, {"index": 2, "remove": true}]'
+                            );
+                            if (!raw) return;
+                            try {
+                              const edits = JSON.parse(raw);
+                              const reason = prompt('Why this change?') || '';
+                              postPlanAction(sessionId, 'edit', { edits, reason }).catch(console.error);
+                            } catch {
+                              alert('Invalid JSON');
+                            }
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium
+                                     bg-stone-600 hover:bg-stone-700 text-white transition-colors"
+                        >
+                          <Pencil size={12} /> Edit
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
               if (m.role === 'tool') {
                 const tc = m.toolCall;
                 const hasResult = !!tc?.result;
-                const stillRunning = !hasResult && (i === messages.length - 1 || messages[i + 1]?.role === 'tool');
+                const stillRunning = !hasResult && streaming;
                 return (
                   <div key={i} className="flex items-start gap-2.5 max-w-[90%]">
                     <div className={clsx(
@@ -486,6 +788,28 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
                       <ChevronRight size={8} className="opacity-0 group-hover:opacity-60 transition-opacity" />
                     </button>
                   )}
+                  {!m.done && !m.content && streaming && statusSteps.length > 0 && (
+                    <div className="flex flex-col gap-1 mb-2">
+                      {statusSteps.map((s, si) => {
+                        const isLatest = si === statusSteps.length - 1;
+                        return (
+                          <div key={si} className={clsx(
+                            'flex items-center gap-1.5 text-[11px] transition-opacity duration-300',
+                            isLatest
+                              ? 'text-stone-600 dark:text-stone-300'
+                              : 'text-stone-400 dark:text-stone-600',
+                          )}>
+                            <span className="text-[10px]">
+                              {STATUS_ICONS[s.step] || '⏳'}
+                            </span>
+                            <span className={clsx(isLatest && 'animate-pulse')}>
+                              {s.detail}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                   <div className="msg-text text-[14px] leading-[1.75] break-words">
                     <Markdown content={m.content} />
                     {!m.done && (
@@ -583,7 +907,16 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
                               : 'text-stone-600 dark:text-stone-400',
                           )}
                         >
-                          <div className="truncate">{m.name}</div>
+                          <div className="flex items-center gap-1 truncate">
+                            <span>{m.name}</span>
+                            {m.capabilities && !m.capabilities.includes('tools') && (
+                              <span className="text-[9px] px-1 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40
+                                               text-amber-600 dark:text-amber-400 leading-none shrink-0"
+                                    title="This model does not support tool calling">
+                                no tools
+                              </span>
+                            )}
+                          </div>
                           <div className="text-[10px] text-stone-400 dark:text-stone-500">{m.backend}</div>
                         </button>
                       ))}
@@ -610,7 +943,13 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
                   <ImagePlus size={15} />
                 </button>
 
-                {streaming && (
+                {streaming && statusSteps.length > 0 && (
+                  <span className="text-[10px] text-stone-400 dark:text-stone-500 animate-pulse flex items-center gap-1">
+                    <span>{STATUS_ICONS[statusSteps[statusSteps.length - 1].step] || '⏳'}</span>
+                    {statusSteps[statusSteps.length - 1].detail}
+                  </span>
+                )}
+                {streaming && statusSteps.length === 0 && (
                   <span className="text-[10px] text-stone-400 dark:text-stone-500 animate-pulse">
                     Thinking...
                   </span>

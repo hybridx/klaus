@@ -9,7 +9,7 @@ klaus is a platform that wraps LangGraph with model routing, persistent memory, 
 │                          klaus Core                                  │
 │                                                                      │
 │  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────────┐ │
-│  │  FastAPI      │  │ Task Router  │  │ Event Bus (WebSocket)      │ │
+│  │  FastAPI      │  │ Task Router  │  │ Event Bus (SSE)            │ │
 │  │  Gateway      │──│ local-first  │  │ real-time system activity  │ │
 │  │  REST + WS    │  │ model select │  │ token + tool streaming     │ │
 │  └──────┬───────┘  └──────┬───────┘  └────────────────────────────┘ │
@@ -83,7 +83,7 @@ Use this table when you need to find the right files for a change:
 | Change database schema | `db.py` |
 | Change agent behavior | `agents/graph.py` |
 | Change task routing | `routing/router.py`, `config/klaus.yaml` |
-| Add a WebSocket event | `events/bus.py`, `api/routes/events.py`, `ui/src/pages/Chat.tsx` |
+| Add an SSE event | `events/bus.py`, `api/routes/events.py`, `ui/src/pages/Chat.tsx` |
 | Add a container service | `docker-compose.yml`, new `Containerfile.*`, `scripts/` |
 
 ## Framework Comparisons

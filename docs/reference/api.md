@@ -225,3 +225,37 @@ curl http://localhost:8000/api/superpowers
   ]
 }
 ```
+
+### `GET /api/superpowers/tools`
+
+List all tools provided by active superpowers (includes MD-based tools).
+
+```bash
+curl http://localhost:8000/api/superpowers/tools
+```
+
+## Orchestration Events
+
+When multi-agent orchestration is active, these SSE events are emitted:
+
+| Event | Data | Description |
+|-------|------|-------------|
+| `plan.created` | `{ plan: PlanStep[], chat_id }` | Planner decomposed the request into tasks |
+| `plan.step_start` | `{ index, description, task_type, backend, model, chat_id }` | Executor started a sub-task |
+| `plan.step_done` | `{ index, result_preview, chat_id }` | Executor completed a sub-task |
+| `plan.consolidated` | `{ chat_id }` | Consolidator merged all results |
+
+### PlanStep Schema
+
+```json
+{
+  "index": 0,
+  "description": "Write a Python function for prime numbers",
+  "task_type": "coding",
+  "backend": "ollama",
+  "model": "granite-code:8b",
+  "depends_on": []
+}
+```
+
+See [Orchestration Guide](/guide/orchestration) for full details.

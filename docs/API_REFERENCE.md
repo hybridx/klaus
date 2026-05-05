@@ -1,6 +1,6 @@
 # API Reference
 
-klaus exposes a REST + WebSocket API via FastAPI. All routes are prefixed with `/api` except `/health` and `/` (dashboard).
+klaus exposes a REST + SSE API via FastAPI. All routes are prefixed with `/api` except `/health` and `/` (dashboard).
 
 ## Health & Dashboard
 
@@ -48,7 +48,7 @@ curl -X POST http://localhost:8000/api/chat \
   }'
 ```
 
-The primary chat interface is the **WebSocket** at `/api/events/ws` (see below).
+The primary chat interface uses **SSE** for streaming events and **REST** for sending messages (see below).
 
 ---
 
@@ -224,38 +224,51 @@ curl -X POST http://localhost:8000/api/mcp/servers \
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/events/history?n=50` | Recent event history |
-| `WebSocket` | `/api/events/ws` | Bidirectional event stream |
+| `GET` | `/api/events/stream?session_id=xxx` | SSE event stream |
+| `POST` | `/api/events/chat/send` | Send a chat message |
+| `POST` | `/api/events/chat/{id}/plan-action` | Approve/reject/edit a plan |
 
 ---
 
-## WebSocket Protocol
+## SSE + REST Protocol
 
-**URL:** `ws://localhost:8000/api/events/ws`
+### SSE Stream
 
-On connection, the server sends the last 50 events from history.
+**URL:** `GET /api/events/stream?session_id=xxx`
 
-### Client → Server
+On connection, the server replays the last 50 events from history, then streams live events. A keepalive comment is sent every 30 seconds.
 
-```json
-{ "type": "chat", "id": "session-123", "messages": [{"role": "user", "content": "Hello"}] }
+### Client → Server (REST)
+
+**Send a chat message:**
+
+```bash
+curl -X POST /api/events/chat/send \
+  -H 'Content-Type: application/json' \
+  -d '{"id": "session-123", "messages": [{"role": "user", "content": "Hello"}]}'
 ```
-
-Full chat message fields:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `type` | `"chat"` | Yes | Message type |
 | `id` | string | Yes | Session/conversation ID |
 | `messages` | array | Yes | `[{role, content}]` |
 | `images` | string[] | No | Base64-encoded images |
-| `task` | string | No | Task type for routing |
 | `model` | string | No | Override model selection |
 | `backend` | string | No | Override backend selection |
 | `temperature` | number | No | Default 0.7 |
+| `retry` | boolean | No | Re-send after interrupted generation |
 
-### Server → Client
+**Plan actions:**
 
-**Streaming chat events (sent to the requesting socket):**
+```bash
+curl -X POST /api/events/chat/session-123/plan-action \
+  -H 'Content-Type: application/json' \
+  -d '{"action": "approve"}'
+```
+
+### Server → Client (SSE)
+
+**Per-session events (sent to the requesting session):**
 
 | Event type | Data fields | Description |
 |------------|-------------|-------------|
@@ -266,7 +279,7 @@ Full chat message fields:
 | `chat.done` | `chat_id` | Response stream complete |
 | `chat.error` | `error`, `chat_id` | Error during generation |
 
-**Broadcast events (sent to all connected sockets):**
+**Broadcast events (sent to all connected sessions):**
 
 | Event type | Description |
 |------------|-------------|

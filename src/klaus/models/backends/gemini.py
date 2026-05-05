@@ -105,7 +105,7 @@ class GeminiBackend:
             ModelInfo(
                 name=name,
                 backend="gemini",
-                capabilities=["chat", "vision", "code"],
+                capabilities=["chat", "vision", "code", "tools"],
             )
             for name in available
         ]

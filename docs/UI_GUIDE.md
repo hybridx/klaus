@@ -28,7 +28,7 @@ ui/
     ├── App.tsx              Root component, page state, session management
     ├── index.css            Tailwind imports, theme tokens, global styles
     ├── hooks/
-    │   ├── useWebSocket.ts  Singleton WS connection to /api/events/ws
+    │   ├── useEventStream.ts SSE connection + REST helpers
     │   └── useTheme.ts      Dark/light theme toggle (localStorage)
     ├── components/
     │   ├── Layout.tsx       App shell — header, nav, sidebar slot
@@ -171,15 +171,15 @@ await fetch('/api/routing/rules', {
 await fetch('/api/routing/rules/coding', { method: 'DELETE' });
 ```
 
-### WebSocket
+### Event Stream (SSE + REST)
 
-Use the `useWebSocket` hook for real-time events:
+Use the `useEventStream` hook for real-time events and the `postChat` / `postPlanAction` helpers for sending:
 
 ```tsx
-import { useWebSocket } from '../hooks/useWebSocket';
+import { useEventStream, postChat } from '../hooks/useEventStream';
 
-function MyComponent() {
-  const ws = useWebSocket();
+function MyComponent({ sessionId }: { sessionId: string }) {
+  const ws = useEventStream(sessionId);
 
   useEffect(() => {
     return ws.on((msg) => {
@@ -190,8 +190,7 @@ function MyComponent() {
   }, [ws]);
 
   const sendChat = () => {
-    ws.send({
-      type: 'chat',
+    postChat({
       id: sessionId,
       messages: [{ role: 'user', content: 'Hello' }],
     });
@@ -199,16 +198,14 @@ function MyComponent() {
 }
 ```
 
-### WebSocket message types
+### REST endpoints (Client → Server)
 
-**Client → Server:**
+| Endpoint | Body | Purpose |
+|----------|------|---------|
+| `POST /api/events/chat/send` | `{ id, messages, images?, model?, backend?, temperature? }` | Send chat message |
+| `POST /api/events/chat/{id}/plan-action` | `{ action, edits?, reason? }` | Approve/reject/edit plan |
 
-| Type | Fields | Purpose |
-|------|--------|---------|
-| `chat` | `id`, `messages`, `images?`, `task?`, `model?`, `backend?`, `temperature?` | Send chat message |
-| `ping` | — | Keep-alive |
-
-**Server → Client:**
+### SSE events (Server → Client)
 
 | Type | Fields | Purpose |
 |------|--------|---------|
@@ -319,7 +316,7 @@ Dark mode is toggled via the `useTheme` hook which adds/removes the `dark` class
 
 2. **No state management library** — Use React's built-in `useState` and `useEffect`. Data is fetched per-page via `fetch`.
 
-3. **Singleton WebSocket** — The `useWebSocket` hook manages a single WS connection shared across all components. Don't create additional WebSocket connections.
+3. **Singleton EventSource** — The `useEventStream` hook manages a single SSE connection shared across all components. Don't create additional EventSource connections.
 
 4. **Session persistence** — `sessionId` and theme are stored in `localStorage`. Chat history loads from the backend on mount.
 

@@ -114,15 +114,15 @@ await fetch('/api/routing/rules', {
 await fetch('/api/routing/rules/coding', { method: 'DELETE' });
 ```
 
-### WebSocket
+### Event Stream (SSE + REST)
 
-Use the singleton `useWebSocket` hook:
+Use the `useEventStream` hook for receiving events, and the `postChat` / `postPlanAction` helpers for sending:
 
 ```tsx
-import { useWebSocket } from '../hooks/useWebSocket';
+import { useEventStream, postChat } from '../hooks/useEventStream';
 
-function MyComponent() {
-  const ws = useWebSocket();
+function MyComponent({ sessionId }: { sessionId: string }) {
+  const ws = useEventStream(sessionId);
 
   useEffect(() => {
     return ws.on((msg) => {
@@ -133,8 +133,7 @@ function MyComponent() {
   }, [ws]);
 
   const sendChat = () => {
-    ws.send({
-      type: 'chat',
+    postChat({
       id: sessionId,
       messages: [{ role: 'user', content: 'Hello' }],
     });
@@ -204,7 +203,7 @@ Toggle via `useTheme` hook which adds/removes `dark` class on `<html>`. Always u
 |------------|---------|
 | **No React Router** | Page state managed in `App.tsx` via `useState<Page>` |
 | **No state library** | Built-in `useState` and `useEffect` only |
-| **Singleton WebSocket** | One `useWebSocket` shared across all components |
+| **Singleton EventSource** | One `useEventStream` shared across all components |
 | **Session persistence** | `sessionId` and theme in `localStorage` |
 | **Icons** | `lucide-react` only. Import individually. |
 | **Build output** | `npm run build` → `../src/klaus/ui/dist/` (gitignored) |

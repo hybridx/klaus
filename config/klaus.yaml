@@ -10,6 +10,15 @@ server:
 default_backend: ollama
 prefer_local: true
 
+# Multi-agent orchestrator: uses a planner model to decompose complex requests
+# and dispatch sub-tasks to the best-fit models.
+orchestrator:
+  planner_backend: ollama
+  planner_model: qwen3:14b
+  parallel_execution: true
+  md_tools_dir: data/tools
+  complexity_threshold: 2
+
 model_backends:
   ollama:
     type: ollama
@@ -58,14 +67,22 @@ task_routing:
     preferred_backend: ollama
     preferred_model: mistral
 
-# MCP servers can be declared here or added dynamically via the API.
-# The LangGraph agent auto-discovers tools from connected MCP servers.
+# MCP servers — three ways to register:
 #
+# 1. Inline in this file:
 # mcp_servers:
 #   filesystem:
 #     command: npx
 #     args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
 #     enabled: true
+#
+# 2. Point to mcp.json files (Cursor/Claude format):
+# mcp_config_files:
+#   - .cursor/mcp.json
+#   - ~/.cursor/mcp.json
+#
+# 3. Auto-discovery: Klaus checks mcp.json, .cursor/mcp.json,
+#    and ~/.cursor/mcp.json on startup automatically.
 
 # Langfuse tracing (optional — set keys to enable observability).
 # Can also be set via LANGFUSE_SECRET_KEY / LANGFUSE_PUBLIC_KEY env vars.

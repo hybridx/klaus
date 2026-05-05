@@ -33,9 +33,13 @@ def _to_lc_messages(messages: list[ChatMessage]) -> list:
         if m.images and m.role == "user":
             parts: list[dict] = [{"type": "text", "text": m.content}]
             for img_b64 in m.images:
+                data_url = (
+                    img_b64 if img_b64.startswith("data:")
+                    else f"data:image/jpeg;base64,{img_b64}"
+                )
                 parts.append({
                     "type": "image_url",
-                    "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"},
+                    "image_url": data_url,
                 })
             result.append(HumanMessage(content=parts))
         else:
@@ -48,6 +52,7 @@ class klausAgent:  # noqa: N801
 
     The agent is rebuilt per-request so it always has the latest tool set,
     the correct model, and fresh memory context injected as a system message.
+    Supports both single-agent (stream) and multi-agent (orchestrate) modes.
     """
 
     def __init__(
@@ -57,12 +62,19 @@ class klausAgent:  # noqa: N801
         memory: MemoryManager | None = None,
         superpowers: SuperpowerRegistry | None = None,
         db=None,
+        task_router=None,
+        orchestrator_config=None,
+        md_agents=None,
     ) -> None:
         self._model_registry = model_registry
         self._mcp_manager = mcp_manager
         self._memory = memory
         self._superpowers = superpowers
         self._db = db
+        self._task_router = task_router
+        self._orchestrator_config = orchestrator_config
+        self._md_agents = md_agents or []
+        self._active_orchestrator = None
 
     def _collect_tools(self) -> list:
         """Gather tools from superpowers first, fall back to raw MCP tools."""
@@ -110,7 +122,9 @@ class klausAgent:  # noqa: N801
         "to make it better for next time.\n\n"
         "IMAGE GENERATION:\n"
         "• When the user asks you to create, draw, or generate an image, use the "
-        "'generate_image' tool with a detailed descriptive prompt.\n\n"
+        "'generate_image' tool with a detailed descriptive prompt.\n"
+        "• When the user shares an image and asks what it is, describes it, or asks "
+        "questions about it, analyze the image directly — do NOT call generate_image.\n\n"
         "Be concise, helpful, and warm. Format responses with markdown when useful."
     )
 
@@ -120,6 +134,7 @@ class klausAgent:  # noqa: N801
         model: str | None = None,
         temperature: float = 0.7,
         memory_context: str | None = None,
+        use_tools: bool = True,
     ):
         llm = self._model_registry.get_chat_model(
             backend=backend,
@@ -127,7 +142,7 @@ class klausAgent:  # noqa: N801
             temperature=temperature,
         )
 
-        tools = self._collect_tools()
+        tools = self._collect_tools() if use_tools else []
 
         parts = [self._SYSTEM_PROMPT]
         if memory_context:
@@ -138,6 +153,10 @@ class klausAgent:  # noqa: N801
 
         if tools:
             logger.debug("Agent built with %d tools", len(tools))
+        elif use_tools:
+            logger.debug("Agent built with no tools available")
+        else:
+            logger.debug("Agent built without tools (model lacks tool support)")
 
         return create_react_agent(llm, tools, prompt=prompt)
 
@@ -197,10 +216,11 @@ class klausAgent:  # noqa: N801
         model: str | None = None,
         temperature: float = 0.7,
         metadata: dict[str, Any] | None = None,
+        use_tools: bool = True,
     ) -> AsyncIterator[dict]:
         """Stream agent execution — yields events for each step."""
         memory_context = await self._build_memory_context(messages)
-        agent = self._build_agent(backend, model, temperature, memory_context)
+        agent = self._build_agent(backend, model, temperature, memory_context, use_tools=use_tools)
         lc_messages = _to_lc_messages(messages)
 
         config: dict[str, Any] = {"stream_mode": "messages"}
@@ -269,3 +289,52 @@ class klausAgent:  # noqa: N801
             await self._memory.maybe_save()
 
         yield {"type": "done"}
+
+    async def orchestrate(
+        self,
+        messages: list[ChatMessage],
+        metadata: dict[str, Any] | None = None,
+    ) -> AsyncIterator[dict]:
+        """Multi-agent orchestration — plan, approve, dispatch, execute, consolidate."""
+        from klaus.agents.orchestrator import Orchestrator
+
+        if not self._task_router:
+            async for event in self.stream(messages=messages, metadata=metadata):
+                yield event
+            return
+
+        orch_cfg = self._orchestrator_config or {}
+        orch = Orchestrator(
+            model_registry=self._model_registry,
+            task_router=self._task_router,
+            superpowers=self._superpowers,
+            memory=self._memory,
+            planner_backend=orch_cfg.get("planner_backend"),
+            planner_model=orch_cfg.get("planner_model"),
+            agents=self._md_agents,
+        )
+
+        self._active_orchestrator = orch
+
+        async for event in orch.run(messages=messages, metadata=metadata):
+            yield event
+
+        self._active_orchestrator = None
+
+        if self._memory:
+            user_text = " ".join(m.content for m in messages if m.role == "user")
+            session_id = (metadata or {}).get("chat_id", "default")
+            self._memory.put(
+                f"/conversations/{session_id}/latest",
+                f"Orchestrated: {user_text[:200]}",
+                metadata={"orchestrated": True},
+                tags=["conversation", "orchestrated"],
+            )
+            await self._memory.maybe_save()
+
+    def handle_plan_approval(self, action: str, edits: list[dict] | None = None, reason: str = "") -> bool:
+        """Forward a plan approval/rejection/edit to the active orchestrator."""
+        if self._active_orchestrator:
+            self._active_orchestrator.set_approval(action, edits, reason)
+            return True
+        return False

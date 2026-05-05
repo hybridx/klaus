@@ -42,6 +42,7 @@ export default defineConfig({
           text: 'Extending klaus',
           items: [
             { text: 'Adding Tools', link: '/guide/adding-tools' },
+            { text: 'Adding Agents (MD)', link: '/guide/orchestration#md-based-agents' },
             { text: 'Adding Model Backends', link: '/guide/adding-backends' },
             { text: 'Adding UI Pages', link: '/guide/ui-guide' },
           ],
@@ -51,6 +52,8 @@ export default defineConfig({
           items: [
             { text: 'Memory System', link: '/guide/memory-system' },
             { text: 'Task Routing', link: '/guide/task-routing' },
+            { text: 'Multi-Agent Orchestration', link: '/guide/orchestration' },
+            { text: 'MD-Based Tools', link: '/guide/md-tools' },
           ],
         },
       ],
@@ -59,7 +62,7 @@ export default defineConfig({
           text: 'Reference',
           items: [
             { text: 'API Reference', link: '/reference/api' },
-            { text: 'WebSocket Protocol', link: '/reference/websocket' },
+            { text: 'SSE Protocol', link: '/reference/sse' },
             { text: 'Configuration', link: '/reference/configuration' },
             { text: 'Database Schema', link: '/reference/database' },
           ],

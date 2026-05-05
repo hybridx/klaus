@@ -12,6 +12,7 @@ from klaus.config.settings import (
     ModelBackendConfig,
     Settings,
     TaskRoutingRule,
+    load_mcp_json,
     load_settings,
 )
 
@@ -76,3 +77,42 @@ class TestLoadSettings:
         monkeypatch.chdir(tmp_path)
         settings = load_settings(None)
         assert settings.server.port == 8000
+
+
+class TestLoadMcpJson:
+    def test_load_cursor_format(self, tmp_path):
+        mcp_json = tmp_path / "mcp.json"
+        mcp_json.write_text(
+            '{"mcpServers": {"products": {"command": "npx", "args": ["@scarlet-mesh/mcp-products"]}}}'
+        )
+        result = load_mcp_json(mcp_json)
+        assert "products" in result
+        assert result["products"].command == "npx"
+        assert result["products"].args == ["@scarlet-mesh/mcp-products"]
+
+    def test_load_with_url(self, tmp_path):
+        mcp_json = tmp_path / "mcp.json"
+        mcp_json.write_text(
+            '{"mcpServers": {"atlas": {"url": "https://mcp.atlassian.com/v1/mcp/authv2"}}}'
+        )
+        result = load_mcp_json(mcp_json)
+        assert result["atlas"].url == "https://mcp.atlassian.com/v1/mcp/authv2"
+        assert result["atlas"].command == ""
+
+    def test_load_with_env(self, tmp_path):
+        mcp_json = tmp_path / "mcp.json"
+        mcp_json.write_text(
+            '{"mcpServers": {"devtools": {"command": "npx", "args": [], "env": {"PORT": "9222"}}}}'
+        )
+        result = load_mcp_json(mcp_json)
+        assert result["devtools"].env == {"PORT": "9222"}
+
+    def test_load_nonexistent_returns_empty(self):
+        result = load_mcp_json("/nonexistent/mcp.json")
+        assert result == {}
+
+    def test_load_empty_servers(self, tmp_path):
+        mcp_json = tmp_path / "mcp.json"
+        mcp_json.write_text('{"mcpServers": {}}')
+        result = load_mcp_json(mcp_json)
+        assert result == {}

@@ -2,6 +2,44 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
+from pathlib import Path
+
+
+def _build_ui() -> None:
+    """Install deps and build the React UI into src/klaus/ui/dist/."""
+    ui_dir = Path(__file__).resolve().parent.parent.parent / "ui"
+    if not ui_dir.exists():
+        print("  [ui] ui/ directory not found, skipping build")
+        return
+
+    node_modules = ui_dir / "node_modules"
+    if not node_modules.exists():
+        print("  [ui] Installing npm dependencies...")
+        result = subprocess.run(
+            ["npm", "install"],
+            cwd=ui_dir,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            print(f"  [ui] npm install failed:\n{result.stderr}", file=sys.stderr)
+            return
+
+    print("  [ui] Building UI...")
+    result = subprocess.run(
+        ["npm", "run", "build"],
+        cwd=ui_dir,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(f"  [ui] Build failed:\n{result.stderr}", file=sys.stderr)
+        return
+
+    print("  [ui] Build complete → src/klaus/ui/dist/")
+
 
 def cli() -> None:
     """Production entrypoint: `klaus`."""
@@ -23,14 +61,18 @@ def cli() -> None:
 def dev() -> None:
     """Dev entrypoint: `klaus-dev` or `make dev`.
 
-    Auto-reload on file changes, debug logging.
+    Builds the UI, then starts the backend with auto-reload.
     """
     import uvicorn
 
     from klaus.config import load_settings
 
     settings = load_settings()
-    print("\n  klaus dev server — http://localhost:8000/\n")
+
+    print("\n  klaus dev server\n")
+    _build_ui()
+    print(f"\n  → http://localhost:{settings.server.port}/\n")
+
     uvicorn.run(
         "klaus.app:create_app",
         factory=True,

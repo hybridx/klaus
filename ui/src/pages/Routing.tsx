@@ -28,9 +28,13 @@ export default function Routing() {
   const [backends, setBackends] = useState<string[]>([]);
   const [allModels, setAllModels] = useState<ModelInfo[]>([]);
 
+  const [taskMode, setTaskMode] = useState<'select' | 'custom'>('select');
   const [newTask, setNewTask] = useState('');
+  const [customTask, setCustomTask] = useState('');
   const [newBackend, setNewBackend] = useState('');
   const [newModel, setNewModel] = useState('');
+
+  const effectiveTask = taskMode === 'custom' ? customTask : newTask;
 
   const load = () => {
     fetch('/api/routing/rules')
@@ -61,18 +65,21 @@ export default function Routing() {
   const modelsForBackend = allModels.filter((m) => m.backend === newBackend);
 
   const add = async () => {
-    if (!newTask || !newBackend) return;
+    const task = effectiveTask.trim();
+    if (!task || !newBackend) return;
 
     await fetch('/api/routing/rules', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        task: newTask,
+        task,
         preferred_backend: newBackend,
         preferred_model: newModel || undefined,
       }),
     });
     setNewTask('');
+    setCustomTask('');
+    setTaskMode('select');
     setNewModel('');
     load();
   };
@@ -98,8 +105,16 @@ export default function Routing() {
             Task
           </label>
           <select
-            value={newTask}
-            onChange={(e) => setNewTask(e.target.value)}
+            value={taskMode === 'custom' ? '_custom' : newTask}
+            onChange={(e) => {
+              if (e.target.value === '_custom') {
+                setTaskMode('custom');
+                setCustomTask('');
+              } else {
+                setTaskMode('select');
+                setNewTask(e.target.value);
+              }
+            }}
             className="border border-stone-200 dark:border-stone-700 rounded-lg
                        bg-transparent px-2.5 py-1.5 text-[12px] w-[140px]
                        text-stone-800 dark:text-stone-200
@@ -113,15 +128,16 @@ export default function Routing() {
           </select>
         </div>
 
-        {newTask === '_custom' && (
+        {taskMode === 'custom' && (
           <div className="flex flex-col gap-1">
             <label className="text-[10px] text-stone-400 dark:text-stone-500 uppercase tracking-wider font-medium">
               Custom Task
             </label>
             <input
               placeholder="e.g. translation"
-              value=""
-              onChange={(e) => setNewTask(e.target.value)}
+              value={customTask}
+              onChange={(e) => setCustomTask(e.target.value)}
+              autoFocus
               className="border border-stone-200 dark:border-stone-700 rounded-lg
                          bg-transparent px-2.5 py-1.5 text-[12px] w-[140px]
                          text-stone-800 dark:text-stone-200
@@ -169,7 +185,7 @@ export default function Routing() {
 
         <button
           onClick={add}
-          disabled={!newTask || newTask === '_custom' || !newBackend}
+          disabled={!effectiveTask.trim() || !newBackend}
           className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-medium
                      bg-stone-800 dark:bg-stone-200 text-white dark:text-stone-900
                      hover:opacity-80 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"

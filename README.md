@@ -7,32 +7,35 @@ Multi-agent AI assistant platform — standalone or multi-cluster — with local
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                          klaus Core                                  │
-│                                                                      │
-│  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────────┐ │
-│  │  FastAPI      │  │ Task Router  │  │ Event Bus (WebSocket)      │ │
-│  │  Gateway      │──│ local-first  │  │ real-time streaming        │ │
-│  │  REST + WS    │  │ model select │  │                            │ │
-│  └──────┬───────┘  └──────┬───────┘  └────────────────────────────┘ │
-│         │                 │                                          │
-│  ┌──────┴─────────────────┴──────────────────────────────────────┐  │
-│  │                    LangGraph Agent                             │  │
-│  │   ReAct loop · memory context · tool execution · tracing      │  │
-│  └──────┬──────────────┬──────────────────┬─────────────────────┘  │
-│         │              │                  │                          │
-│  ┌──────┴──────┐ ┌─────┴──────┐ ┌────────┴────────┐               │
-│  │ Model       │ │ Superpower │ │ Memory Tree     │               │
-│  │ Registry    │ │ Registry   │ │ /knowledge      │               │
-│  │ (LangChain) │ │ (plugins)  │ │ /conversations  │               │
-│  │ Ollama, HF, │ │ MCP Bridge │ │ /superpowers    │               │
-│  │ vLLM, OAI   │ │ + custom   │ │ pgvector embeds │               │
-│  └─────────────┘ └────────────┘ └─────────────────┘               │
-│  ┌────────────────────────────────────────────────────────────┐    │
-│  │  PostgreSQL + pgvector (memory, conversations, embeddings) │    │
-│  │  MCP Server Manager · Langfuse Observability               │    │
-│  └────────────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────┐
+│                             klaus Core                                      │
+│                                                                             │
+│  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────────┐        │
+│  │  FastAPI      │  │ Task Router  │  │ Event Bus (SSE)            │        │
+│  │  Gateway      │──│ local-first  │  │ real-time streaming        │        │
+│  │  REST + SSE   │  │ model select │  │                            │        │
+│  └──────┬───────┘  └──────┬───────┘  └────────────────────────────┘        │
+│         │                 │                                                 │
+│  ┌──────┴─────────────────┴──────────────────────────────────────────┐     │
+│  │                  Multi-Agent Orchestrator                          │     │
+│  │   Planner → Dispatcher → Executors (parallel) → Consolidator      │     │
+│  ├────────────────────────────────────────────────────────────────────┤     │
+│  │                    LangGraph Agent (single-agent fallback)         │     │
+│  │   ReAct loop · memory context · tool execution · tracing          │     │
+│  └──────┬──────────────┬──────────────────┬──────────────────────┘     │
+│         │              │                  │                              │
+│  ┌──────┴──────┐ ┌─────┴──────┐ ┌────────┴────────┐                   │
+│  │ Model       │ │ Superpower │ │ Memory Tree     │                   │
+│  │ Registry    │ │ Registry   │ │ /knowledge      │                   │
+│  │ (LangChain) │ │ (plugins)  │ │ /conversations  │                   │
+│  │ Ollama, HF, │ │ MCP Bridge │ │ /superpowers    │                   │
+│  │ Gemini      │ │ + MD tools │ │ pgvector embeds │                   │
+│  └─────────────┘ └────────────┘ └─────────────────┘                   │
+│  ┌────────────────────────────────────────────────────────────────┐    │
+│  │  PostgreSQL + pgvector (memory, conversations, embeddings)     │    │
+│  │  MCP Server Manager · MD-Based Tools · Langfuse Observability  │    │
+│  └────────────────────────────────────────────────────────────────┘    │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
 For a deep dive comparing klaus to LangGraph, AutoGen, CrewAI, OpenAI Agents SDK, Semantic Kernel, and Google A2A, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
@@ -109,6 +112,32 @@ curl http://localhost:8000/api/models
 ```
 
 ### MCP Server Management
+
+Klaus auto-discovers MCP servers from `mcp.json` files (Cursor/Claude format) at:
+- `mcp.json` (project root)
+- `.cursor/mcp.json` (project)
+- `~/.cursor/mcp.json` (global)
+
+Or point to any file explicitly in `config/klaus.yaml`:
+
+```yaml
+mcp_config_files:
+  - .cursor/mcp.json
+  - /path/to/other/mcp.json
+```
+
+The `mcp.json` format is the standard Cursor/Claude format:
+
+```json
+{
+  "mcpServers": {
+    "products": { "command": "npx", "args": ["@scarlet-mesh/mcp-products"] },
+    "devtools": { "command": "npx", "args": ["chrome-devtools-mcp@latest"] }
+  }
+}
+```
+
+You can also register servers at runtime via API:
 
 ```bash
 # Register an MCP server at runtime
@@ -204,10 +233,18 @@ model_backends:
     locality: cloud
     # API key loaded from HF_TOKEN in .env
 
+orchestrator:
+  planner_backend: ollama
+  planner_model: qwen3:14b
+  parallel_execution: true
+  md_tools_dir: data/tools
+
 log_level: info
 ```
 
 With `prefer_local: true` (the default), klaus uses Ollama for routine tasks and falls back to Gemini when local models are unavailable or when a task routing rule explicitly targets it.
+
+The `orchestrator` section enables multi-agent orchestration — complex requests are decomposed by a planner model and dispatched to specialist agents. The planner presents its plan for human approval before execution, and learns from corrections to improve future plans. Define specialist agents as simple Markdown files in `data/agents/`. See [Orchestration Guide](https://hybridx.github.io/klaus/guide/orchestration).
 
 ## Project Structure
 
@@ -224,7 +261,15 @@ klaus/
 ├── docs/ARCHITECTURE.md         # Architecture deep-dive
 ├── CONTRIBUTING.md              # Contributor guide
 ├── .env.example                 # Template for API keys
-├── tests/                       # Test suite (107 tests)
+├── data/tools/                  # MD-based tool definitions
+│   ├── calculator.md
+│   ├── date_time.md
+│   └── text_transform.md
+├── data/agents/                 # MD-based specialist agents
+│   ├── code-expert.md
+│   ├── creative-writer.md
+│   └── analyst.md
+├── tests/                       # Test suite (197 tests)
 ├── ui/                          # Frontend (React + Vite + Tailwind + React Flow)
 │   ├── package.json
 │   ├── vite.config.ts
@@ -235,7 +280,7 @@ klaus/
 │       ├── App.tsx              # Root component + page routing
 │       ├── index.css            # Tailwind + theme tokens
 │       ├── hooks/
-│       │   ├── useWebSocket.ts  # WebSocket singleton hook
+│       │   ├── useEventStream.ts # SSE + REST hook
 │       │   └── useTheme.ts      # Light/dark theme hook
 │       ├── components/
 │       │   ├── Layout.tsx       # App shell, header, nav menu
@@ -244,16 +289,19 @@ klaus/
 │       └── pages/
 │           ├── Chat.tsx         # Chat with model selector + image upload
 │           ├── Knowledge.tsx    # Knowledge graph visualization
-│           ├── Flow.tsx         # Pipeline view (React Flow)
+│           ├── Flow.tsx         # Pipeline / orchestrator graph (React Flow)
 │           ├── Models.tsx       # Model backend viewer
 │           ├── Routing.tsx      # Task routing rules
-│           └── Activity.tsx     # Real-time event log
+│           ├── Activity.tsx     # Real-time event log
+│           ├── MCP.tsx          # MCP server management
+│           └── Superpowers.tsx  # Superpower/tool inspector
 └── src/klaus/
     ├── main.py                  # CLI entrypoint
     ├── app.py                   # FastAPI app factory + lifespan
     ├── config/settings.py       # Pydantic settings + YAML loader
     ├── agents/
-    │   ├── graph.py             # LangGraph ReAct agent
+    │   ├── graph.py             # LangGraph ReAct agent + orchestrate()
+    │   ├── orchestrator.py      # Multi-agent orchestrator (planner/dispatcher/executor)
     │   ├── tools.py             # MCP → LangChain tool bridge
     │   └── tracing.py           # Langfuse integration
     ├── models/
@@ -276,8 +324,10 @@ klaus/
     │       ├── memory_tools.py  # Memory read/write/search
     │       ├── skills.py        # Self-improving skills system
     │       └── image_gen.py     # Image generation (HF)
-    ├── events/bus.py            # WebSocket event bus
-    ├── mcp/manager.py           # Dynamic MCP server manager
+    ├── events/bus.py            # SSE event bus
+    ├── mcp/
+    │   ├── manager.py           # Dynamic MCP server manager
+    │   └── md_tools.py          # Markdown-based tool parser
     ├── ui/dist/                 # Built frontend (gitignored)
     └── api/
         ├── deps.py              # Shared app state
@@ -298,8 +348,10 @@ Full documentation is hosted at **[hybridx.github.io/klaus](https://hybridx.gith
 | [Adding Backends](https://hybridx.github.io/klaus/guide/adding-backends) | Adding model backends (Ollama, OpenAI, etc.) |
 | [UI Guide](https://hybridx.github.io/klaus/guide/ui-guide) | React frontend architecture, design system |
 | [Memory System](https://hybridx.github.io/klaus/guide/memory-system) | Memory tree, pgvector, hybrid search |
+| [Orchestration](https://hybridx.github.io/klaus/guide/orchestration) | Multi-agent planner/executor pattern |
+| [MD-Based Tools](https://hybridx.github.io/klaus/guide/md-tools) | Creating tools from Markdown files |
 | [API Reference](https://hybridx.github.io/klaus/reference/api) | All REST endpoints |
-| [WebSocket Protocol](https://hybridx.github.io/klaus/reference/websocket) | Real-time message protocol |
+| [SSE Protocol](https://hybridx.github.io/klaus/reference/sse) | Real-time SSE + REST protocol |
 | [Configuration](https://hybridx.github.io/klaus/reference/configuration) | YAML + env var reference |
 | [Database Schema](https://hybridx.github.io/klaus/reference/database) | PostgreSQL + pgvector schema |
 
@@ -311,10 +363,15 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, code standards, and how to add
 
 ## Roadmap
 
+- [x] **Multi-agent orchestration** — planner decomposes requests, dispatches to specialist agents, consolidates results
+- [x] **MD-based tools** — define agent tools from Markdown files (no code needed)
+- [x] **MD-based agents** — define specialist agents from Markdown files (`data/agents/`)
+- [x] **Human-in-the-loop** — plan approval: approve, reject, or edit the orchestrator's plan before execution
+- [x] **Self-improving plans** — corrections stored in memory, used to improve future plan generation
+- [x] **MCP auto-discovery** — auto-load MCP servers from `mcp.json` (Cursor/Claude format)
 - [ ] **Agent handoffs** — triage agent delegates to specialist superpowers (inspired by OpenAI Agents SDK)
 - [ ] **A2A protocol** — Agent Cards, task state machine, multi-instance discovery (Google A2A)
 - [ ] **Guardrails** — input/output validation pipeline
-- [ ] **Orchestration patterns** — sequential, concurrent, handoff strategies (Semantic Kernel)
 - [x] **HuggingFace backend** — HF Inference API for chat + image generation
 - [ ] **vLLM backend** — high-performance model serving
 - [ ] **OpenAI-compatible backend** — any provider with an OpenAI-style API

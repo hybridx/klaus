@@ -9,7 +9,7 @@ This document explains klaus's architecture by comparing it to the major AI agen
 │                          klaus Core                                  │
 │                                                                      │
 │  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────────┐ │
-│  │  FastAPI      │  │ Task Router  │  │ Event Bus (WebSocket)      │ │
+│  │  FastAPI      │  │ Task Router  │  │ Event Bus (SSE)            │ │
 │  │  Gateway      │──│ local-first  │  │ real-time system activity  │ │
 │  │  REST + WS    │  │ model select │  │ token + tool streaming     │ │
 │  └──────┬───────┘  └──────┬───────┘  └────────────────────────────┘ │
@@ -159,7 +159,7 @@ This document explains klaus's architecture by comparing it to the major AI agen
 | Concept | A2A | klaus equivalent |
 |---|---|---|
 | Agent discovery | Agent Cards at `/.well-known/agent.json` | Not yet — klaus agents don't self-describe |
-| Communication | JSON-RPC 2.0 over HTTP(S) | FastAPI REST + WebSocket |
+| Communication | JSON-RPC 2.0 over HTTP(S) | FastAPI REST + SSE |
 | Task lifecycle | submitted → working → completed | Chat request → response |
 | Complementary to | MCP (agent-to-tool) | Already uses MCP for tools |
 
@@ -211,7 +211,7 @@ Use this table to find the right files when making changes:
 | **Change task routing** | `routing/router.py`, `config/klaus.yaml` (`task_routing` section) |
 | **Change the event bus** | `events/bus.py` (add `EventType`), `api/routes/events.py` (forward events) |
 | **Change config structure** | `config/settings.py` (Pydantic models), `config/klaus.yaml`, `app.py` (usage) |
-| **Add a new WebSocket event** | `events/bus.py` (EventType), `api/routes/events.py`, `ui/src/pages/Chat.tsx` (handler) |
+| **Add a new SSE event** | `events/bus.py` (EventType), `api/routes/events.py`, `ui/src/pages/Chat.tsx` (handler) |
 | **Add a container service** | `docker-compose.yml`, new `Containerfile.*`, `scripts/` |
 
 ## Documentation
@@ -223,5 +223,5 @@ Detailed guides for each area:
 | [ADDING_TOOLS.md](./ADDING_TOOLS.md) | Creating superpowers and tools, the plugin system |
 | [ADDING_AGENTS.md](./ADDING_AGENTS.md) | Adding model backends, the registry, vision support |
 | [UI_GUIDE.md](./UI_GUIDE.md) | React frontend architecture, design system, adding pages |
-| [API_REFERENCE.md](./API_REFERENCE.md) | All REST and WebSocket endpoints |
+| [API_REFERENCE.md](./API_REFERENCE.md) | All REST and SSE endpoints |
 | [MEMORY_SYSTEM.md](./MEMORY_SYSTEM.md) | Memory tree, pgvector embeddings, hybrid search |

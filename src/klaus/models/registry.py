@@ -48,6 +48,7 @@ class ModelRegistry:
     def __init__(self) -> None:
         self._backends: dict[str, Any] = {}
         self._default_backend: str | None = None
+        self._capabilities_cache: dict[str, dict[str, list[str]]] = {}
 
     async def register_from_config(
         self,
@@ -73,6 +74,11 @@ class ModelRegistry:
         if backend and hasattr(backend, "shutdown"):
             await backend.shutdown()
             logger.info("Unregistered model backend: %s", name)
+        self._capabilities_cache.pop(name, None)
+
+    def list_backends(self) -> list[str]:
+        """Return the names of all registered backends."""
+        return list(self._backends.keys())
 
     def get(self, name: str | None = None) -> Any:
         key = name or self._default_backend
@@ -95,6 +101,59 @@ class ModelRegistry:
         for name, b in self._backends.items():
             result[name] = await b.list_models()
         return result
+
+    async def refresh_capabilities(self) -> None:
+        """Fetch and cache capabilities for all models across all backends."""
+        for backend_name, backend in self._backends.items():
+            try:
+                models = await backend.list_models()
+                self._capabilities_cache[backend_name] = {
+                    m.name: m.capabilities for m in models
+                }
+            except Exception as exc:
+                logger.warning(
+                    "Failed to refresh capabilities for %s: %s",
+                    backend_name, exc,
+                )
+
+    _PESSIMISTIC_CAPABILITIES = frozenset({"vision"})
+
+    def model_supports(self, backend: str, model: str | None, capability: str) -> bool:
+        """Check if a model supports a specific capability (e.g. 'tools').
+
+        For most capabilities returns True when data is unavailable (optimistic).
+        For 'vision' and similar rare capabilities returns False (pessimistic)
+        so the router actively searches for a model that is confirmed capable.
+        """
+        if not model:
+            return capability not in self._PESSIMISTIC_CAPABILITIES
+        backend_caps = self._capabilities_cache.get(backend)
+        if not backend_caps:
+            return capability not in self._PESSIMISTIC_CAPABILITIES
+        caps = backend_caps.get(model)
+        if caps is None:
+            for cached_name, cached_caps in backend_caps.items():
+                if cached_name.split(":")[0] == model.split(":")[0]:
+                    caps = cached_caps
+                    break
+        if caps is None:
+            return capability not in self._PESSIMISTIC_CAPABILITIES
+        return capability in caps
+
+    async def find_capable_model(
+        self, backend: str, capability: str
+    ) -> str | None:
+        """Find a model on the given backend that supports a capability.
+
+        Prefers models without a namespace prefix (official models) over
+        community fine-tunes (e.g. 'gemma4:latest' over 'OX-Telecom/gemma-4-...').
+        """
+        backend_caps = self._capabilities_cache.get(backend, {})
+        candidates = [name for name, caps in backend_caps.items() if capability in caps]
+        if not candidates:
+            return None
+        official = [n for n in candidates if "/" not in n]
+        return official[0] if official else candidates[0]
 
     async def health_check(self) -> dict[str, bool]:
         return {name: await b.health() for name, b in self._backends.items()}

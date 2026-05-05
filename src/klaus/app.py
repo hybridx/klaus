@@ -62,6 +62,9 @@ async def lifespan(app: FastAPI):
             {"name": name, "type": cfg.type, "locality": cfg.locality},
         )
 
+    logger.info("Discovering model capabilities...")
+    await state.model_registry.refresh_capabilities()
+
     if settings.task_routing:
         state.task_router.load_rules(settings.task_routing)
         logger.info("Loaded %d task routing rules from config", len(settings.task_routing))
@@ -76,18 +79,70 @@ async def lifespan(app: FastAPI):
         logger.info("Loaded %d task routing rules from database", len(db_rules))
 
     # ── MCP servers ──────────────────────────────────────────
-    for name, mcp_cfg in settings.mcp_servers.items():
-        if mcp_cfg.enabled:
-            try:
-                await state.mcp_manager.register(
-                    name=name,
-                    command=mcp_cfg.command,
-                    args=mcp_cfg.args,
-                    env=mcp_cfg.env,
-                )
-                state.event_bus.emit(EventType.MCP_REGISTERED, {"name": name})
-            except Exception as exc:
-                logger.warning("Failed to register MCP server '%s': %s", name, exc)
+    # Explicit servers from klaus.yaml connect immediately.
+    # Auto-discovered servers (from mcp.json files) are registered
+    # but only connected on first use — avoids startup crashes from
+    # external MCP servers (Cursor, Claude, etc.) that may not be available.
+    from klaus.config.settings import load_mcp_json
+
+    explicit_mcp: dict = dict(settings.mcp_servers)
+    discovered_mcp: dict = {}
+
+    for mcp_path in settings.mcp_config_files:
+        loaded = load_mcp_json(mcp_path)
+        for name, cfg in loaded.items():
+            if name not in explicit_mcp and name not in discovered_mcp:
+                discovered_mcp[name] = cfg
+                logger.info("Loaded MCP server '%s' from %s", name, mcp_path)
+
+    from pathlib import Path as _P
+
+    _auto_paths = [
+        _P("mcp.json"),
+        _P(".cursor/mcp.json"),
+        _P.home() / ".cursor" / "mcp.json",
+    ]
+    for ap in _auto_paths:
+        if ap.exists():
+            loaded = load_mcp_json(ap)
+            for name, cfg in loaded.items():
+                if name not in explicit_mcp and name not in discovered_mcp:
+                    discovered_mcp[name] = cfg
+                    logger.info("Auto-discovered MCP server '%s' from %s", name, ap)
+
+    async def _register_mcp(name: str, mcp_cfg, *, auto_connect: bool) -> None:
+        if not mcp_cfg.enabled:
+            return
+        if mcp_cfg.url and not mcp_cfg.command:
+            logger.info("Skipping MCP server '%s' (SSE/HTTP transport not yet supported)", name)
+            return
+        try:
+            await state.mcp_manager.register(
+                name=name,
+                command=mcp_cfg.command,
+                args=mcp_cfg.args,
+                env=mcp_cfg.env,
+                auto_connect=auto_connect,
+            )
+            state.event_bus.emit(EventType.MCP_REGISTERED, {"name": name})
+        except BaseException as exc:
+            logger.warning("Failed to register MCP server '%s': %s", name, exc)
+
+    for name, mcp_cfg in explicit_mcp.items():
+        await _register_mcp(name, mcp_cfg, auto_connect=True)
+
+    for name, mcp_cfg in discovered_mcp.items():
+        await _register_mcp(name, mcp_cfg, auto_connect=False)
+
+    # ── MD-based Tools ────────────────────────────────────────
+    from klaus.mcp.md_tools import load_md_tools
+
+    md_tools_dir = getattr(settings, "orchestrator", None)
+    md_dir = md_tools_dir.md_tools_dir if md_tools_dir else "data/tools"
+    md_tools = load_md_tools(md_dir)
+    if md_tools:
+        logger.info("Loaded %d MD-based tools from %s", len(md_tools), md_dir)
+    state.md_tools = md_tools  # type: ignore[attr-defined]
 
     # ── Superpowers ──────────────────────────────────────────
     registry = state.init_superpowers()
@@ -97,7 +152,7 @@ async def lifespan(app: FastAPI):
     from klaus.superpowers.builtin.memory_tools import MemoryTools
     from klaus.superpowers.builtin.skills import SkillsSuperpower
 
-    await registry.register(MCPBridge(state.mcp_manager))
+    await registry.register(MCPBridge(state.mcp_manager, md_tools=md_tools))
     await registry.register(MemoryTools(state.memory, db=state.db))
     await registry.register(SkillsSuperpower(state.memory))
     await registry.register(ImageGeneration())
@@ -105,9 +160,19 @@ async def lifespan(app: FastAPI):
         "Superpowers ready: %d active", registry.active_count
     )
 
+    # ── MD-based Agents ────────────────────────────────────────
+    from klaus.agents.md_agents import load_md_agents
+
+    agents_dir = "data/agents"
+    md_agents = load_md_agents(agents_dir)
+    if md_agents:
+        logger.info("Loaded %d MD-based agents from %s", len(md_agents), agents_dir)
+    state.md_agents = md_agents  # type: ignore[attr-defined]
+
     # ── Agent ────────────────────────────────────────────────
-    state.init_agent()
-    logger.info("LangGraph agent initialized")
+    orch_cfg = settings.orchestrator.model_dump() if hasattr(settings, "orchestrator") else None
+    state.init_agent(orchestrator_config=orch_cfg, md_agents=md_agents)
+    logger.info("LangGraph agent initialized (orchestrator: %s)", "enabled" if orch_cfg else "disabled")
 
     from klaus.agents.tracing import is_langfuse_configured
 

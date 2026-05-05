@@ -61,7 +61,7 @@ ui/                  Frontend (React + Vite + Tailwind CSS + React Flow)
 │   ├── main.tsx         React entry point
 │   ├── App.tsx          Root component + page state
 │   ├── index.css        Tailwind imports + theme tokens
-│   ├── hooks/           React hooks (useWebSocket, useTheme)
+│   ├── hooks/           React hooks (useEventStream, useTheme)
 │   ├── components/      Shared components (Layout, Sidebar, Markdown)
 │   └── pages/           Page components (Chat, Knowledge, Flow, Models, Routing, Activity)
 ├── index.html
@@ -72,7 +72,7 @@ src/klaus/           Backend (Python + FastAPI)
 ├── agents/          LangGraph agent, tool bridges, Langfuse tracing
 ├── api/             FastAPI routes (chat, models, mcp, routing, memory, superpowers)
 ├── config/          Pydantic settings, YAML loader
-├── events/          WebSocket event bus
+├── events/          SSE event bus
 ├── mcp/             Dynamic MCP server manager
 ├── memory/          Tree-structured persistent memory
 ├── models/          Model registry + LangChain backends (Ollama, Gemini, HuggingFace)
@@ -90,7 +90,7 @@ We have detailed guides for each area of the codebase. Start with the relevant g
 | **[docs/ADDING_TOOLS.md](docs/ADDING_TOOLS.md)** | Creating superpowers and agent tools |
 | **[docs/ADDING_AGENTS.md](docs/ADDING_AGENTS.md)** | Adding model backends (Ollama, OpenAI, etc.) |
 | **[docs/UI_GUIDE.md](docs/UI_GUIDE.md)** | Working on the React frontend |
-| **[docs/API_REFERENCE.md](docs/API_REFERENCE.md)** | All REST and WebSocket endpoints |
+| **[docs/API_REFERENCE.md](docs/API_REFERENCE.md)** | All REST and SSE endpoints |
 | **[docs/MEMORY_SYSTEM.md](docs/MEMORY_SYSTEM.md)** | Memory tree, embeddings, pgvector |
 | **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** | System overview and framework comparison |
 

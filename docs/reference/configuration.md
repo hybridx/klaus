@@ -52,11 +52,83 @@ task_routing:
     preferred_backend: ollama
     preferred_model: llama3.2
 
-mcp_servers: []              # MCP servers to auto-register on startup
+orchestrator:
+  planner_backend: ollama    # Backend for planner/consolidator model
+  planner_model: qwen3:14b   # Model for decomposing complex requests
+  parallel_execution: true   # Execute independent tasks in parallel
+  md_tools_dir: data/tools   # Directory for MD-based tool definitions
+  complexity_threshold: 2    # Min sentence count to trigger orchestration
+
+# MCP servers — inline registration
+mcp_servers:
+  filesystem:
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+    enabled: true
+
+# MCP servers — load from mcp.json files (Cursor/Claude format)
+mcp_config_files:
+  - .cursor/mcp.json
+  - ~/.cursor/mcp.json
 
 tracing:
   enabled: false             # Enable Langfuse tracing
 ```
+
+## MCP Server Configuration
+
+Klaus supports three ways to register MCP servers:
+
+### 1. Inline in `klaus.yaml`
+
+```yaml
+mcp_servers:
+  filesystem:
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+    enabled: true
+```
+
+### 2. From `mcp.json` files (Cursor/Claude format)
+
+Point to one or more `mcp.json` files:
+
+```yaml
+mcp_config_files:
+  - .cursor/mcp.json
+  - /path/to/other/mcp.json
+```
+
+The `mcp.json` uses the standard Cursor/Claude format:
+
+```json
+{
+  "mcpServers": {
+    "products": {
+      "command": "npx",
+      "args": ["@scarlet-mesh/mcp-products"]
+    },
+    "devtools": {
+      "command": "npx chrome-devtools-mcp@latest",
+      "env": {},
+      "args": []
+    },
+    "atlas": {
+      "url": "https://mcp.atlassian.com/v1/mcp/authv2"
+    }
+  }
+}
+```
+
+### 3. Auto-discovery
+
+Klaus automatically checks these locations on startup:
+
+- `mcp.json` (project root)
+- `.cursor/mcp.json` (project-level)
+- `~/.cursor/mcp.json` (global user config)
+
+Servers from all sources are merged. Inline `mcp_servers` take precedence over `mcp.json` entries with the same name.
 
 ## Environment Variables
 

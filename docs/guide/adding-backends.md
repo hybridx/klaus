@@ -1,6 +1,11 @@
 # Adding Model Backends
 
-klaus supports multiple LLM providers through its **Model Registry**. Each provider is a backend class that wraps a LangChain chat model.
+klaus supports multiple LLM providers through its **Model Registry**. There are **two approaches**:
+
+| Approach | When to use | Effort |
+|----------|------------|--------|
+| **Config-only** | Provider has an OpenAI-compatible API (vLLM, LM Studio, Together, Groq) | Edit `klaus.yaml` only |
+| **Custom class** | Provider needs its own SDK, auth flow, or model listing logic | Write a Python class |
 
 ## Existing Backends
 
@@ -9,8 +14,56 @@ klaus supports multiple LLM providers through its **Model Registry**. Each provi
 | `OllamaBackend` | Ollama (local) | `ollama` | `llama3.2` | Local-first, vision |
 | `GeminiBackend` | Google AI | `gemini` | `gemini-2.0-flash` | Cloud API |
 | `HuggingFaceBackend` | HuggingFace Hub | `huggingface` | `Qwen/Qwen3-235B-A22B` | Inference API, vision |
+| `OpenAIBackend` | OpenAI / compatible | `openai` | `gpt-4o` | Works with any OpenAI-compatible API |
 
-## Quick Start
+---
+
+## Approach 1: Config-Only (OpenAI-Compatible APIs)
+
+If your provider exposes an OpenAI-compatible API (vLLM, LM Studio, Together AI, Groq, Fireworks), you can use the built-in `openai` backend type with just a config change:
+
+### Working Example: vLLM Local Server
+
+```yaml
+# config/klaus.yaml
+model_backends:
+  vllm:
+    type: openai
+    base_url: http://localhost:8080/v1
+    default_model: meta-llama/Llama-3.2-8B
+    locality: local
+    options:
+      api_key: "not-needed"
+```
+
+### Working Example: Together AI (Cloud)
+
+```yaml
+model_backends:
+  together:
+    type: openai
+    base_url: https://api.together.xyz/v1
+    default_model: meta-llama/Llama-3.3-70B-Instruct-Turbo
+    locality: cloud
+    options:
+      api_key: ${TOGETHER_API_KEY}
+```
+
+Add the key to `.env`:
+
+```bash
+TOGETHER_API_KEY=your-key-here
+```
+
+That's it. Restart klaus and the new backend appears in the Models page and is available for routing.
+
+---
+
+## Approach 2: Custom Backend Class
+
+For providers that need their own SDK, custom auth, or special model listing.
+
+### Quick Start
 
 Three files to touch: the backend class, the registry factory map, and the config.
 
@@ -230,7 +283,27 @@ model_backends:
       api_key: ${ENV_VAR}   # Supports env var interpolation
 ```
 
+## Which Approach Should I Use?
+
+| Scenario | Use |
+|----------|-----|
+| Provider has `/v1/chat/completions` endpoint | Config-only (`type: openai`) |
+| Local vLLM, LM Studio, LocalAI, llama.cpp server | Config-only (`type: openai`) |
+| Cloud provider: Together, Groq, Fireworks, Anyscale | Config-only (`type: openai`) |
+| Provider needs custom SDK (Gemini, Anthropic, Cohere) | Custom class |
+| Need custom model listing from provider API | Custom class |
+| Need special capability detection (vision, tools) | Custom class |
+
 ## Files to Touch
+
+**Config-only approach:**
+
+| File | What to change |
+|------|----------------|
+| `config/klaus.yaml` | Add backend config with `type: openai` |
+| `.env.example` | Add API key env var if needed |
+
+**Custom class approach:**
 
 | File | What to change |
 |------|----------------|

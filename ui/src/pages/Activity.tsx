@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { Zap } from 'lucide-react';
 import clsx from 'clsx';
-import type { WsMessage } from '../hooks/useWebSocket';
+import type { SSEMessage } from '../hooks/useEventStream';
 
 interface EventItem {
   type: string;
@@ -24,7 +24,7 @@ function formatTime(ts: number) {
 
 interface Props {
   ws: {
-    on: (fn: (m: WsMessage) => void) => () => void;
+    on: (fn: (m: SSEMessage) => void) => () => void;
   };
 }
 
