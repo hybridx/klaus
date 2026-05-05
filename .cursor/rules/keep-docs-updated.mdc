@@ -1,0 +1,39 @@
+---
+description: Keep all documentation in sync when adding features or changing behavior
+alwaysApply: true
+---
+
+# Keep Documentation Updated
+
+When any feature is added, changed, or removed, update the relevant documentation:
+
+## Always check these files
+
+- **`README.md`** — update if the change affects: architecture diagram, project structure, config examples, API endpoints, CLI commands, prerequisites, roadmap items
+- **`CONTRIBUTING.md`** — update if the change affects: setup steps, code standards, project layout, how to add backends/tools/pages
+- **`docs/ARCHITECTURE.md`** — update if the change affects: system architecture, extension model, ReAct loop, UI layout, framework comparisons, change map table
+- **`docs/guide/extending-klaus.md`** — update if adding a new extension point, superpower example, or developer workflow
+
+## Feature-specific docs
+
+| Change type | Update these docs |
+|-------------|-------------------|
+| New superpower or tool | `docs/guide/adding-tools.md`, `docs/guide/extending-klaus.md` |
+| New MD agent | `docs/guide/orchestration.md` |
+| New model backend | `docs/guide/adding-backends.md` |
+| New API endpoint | `docs/reference/api.md` |
+| New SSE event | `docs/reference/sse.md` |
+| Config changes | `docs/reference/configuration.md` |
+| UI changes | `docs/guide/ui-guide.md` |
+| Database changes | `docs/reference/database.md` |
+| Memory system changes | `docs/guide/memory-system.md` |
+| Orchestrator changes | `docs/guide/orchestration.md` |
+
+## Rules
+
+- Include both the **simple approach** (MD file) and the **full approach** (Python class) when documenting extension points
+- Show working code examples, not pseudocode
+- Keep the architecture diagram in `ARCHITECTURE.md` and `README.md` in sync
+- Update the project structure tree in `README.md` when files/directories are added
+- Update the VitePress sidebar in `docs/.vitepress/config.mts` when adding new doc pages
+- Do NOT update docs for internal refactors, test-only changes, or lint fixes

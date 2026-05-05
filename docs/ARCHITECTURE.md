@@ -5,46 +5,126 @@ This document explains klaus's architecture by comparing it to the major AI agen
 ## Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                          klaus Core                                  │
-│                                                                      │
-│  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────────┐ │
-│  │  FastAPI      │  │ Task Router  │  │ Event Bus (SSE)            │ │
-│  │  Gateway      │──│ local-first  │  │ real-time system activity  │ │
-│  │  REST + WS    │  │ model select │  │ token + tool streaming     │ │
-│  └──────┬───────┘  └──────┬───────┘  └────────────────────────────┘ │
-│         │                 │                                          │
-│  ┌──────┴─────────────────┴──────────────────────────────────────┐  │
-│  │                    LangGraph Agent                             │  │
-│  │   ReAct loop · memory context injection · tool execution      │  │
-│  │   per-request rebuild with latest tools + routed model        │  │
-│  │   tool result streaming · self-improvement reflection         │  │
-│  └──────┬──────────────┬──────────────────┬─────────────────────┘  │
-│         │              │                  │                          │
-│  ┌──────┴──────┐ ┌─────┴──────┐ ┌────────┴────────┐               │
-│  │ Model       │ │ Superpower │ │ Memory Tree     │               │
-│  │ Registry    │ │ Registry   │ │ /knowledge      │               │
-│  │ (LangChain) │ │ (plugins)  │ │ /conversations  │               │
-│  │             │ │            │ │ /superpowers     │               │
-│  │ ┌─────────┐ │ │ ┌────────┐│ │                  │               │
-│  │ │ Ollama  │ │ │ │MCP     ││ │ Hybrid search:   │               │
-│  │ │ Gemini  │ │ │ │Bridge  ││ │ keyword + tag +  │               │
-│  │ │ HF      │ │ │ │Memory  ││ │ semantic (pgvec) │               │
-│  │ │ Custom  │ │ │ │Skills  ││ │ + recency boost  │               │
-│  │ └─────────┘ │ │ │ImgGen  ││ │                  │               │
-│  └─────────────┘ │ │Custom  ││ │ PostgreSQL +     │               │
-│                  │ └────────┘│ │ pgvector          │               │
-│                  └───────────┘ └──────────────────┘               │
-│  ┌────────────────────────────────────────────────────────────┐    │
-│  │                    MCP Server Manager                      │    │
-│  │    dynamic registration · tool discovery · runtime calls   │    │
-│  └────────────────────────────────────────────────────────────┘    │
-│  ┌────────────────────────────────────────────────────────────┐    │
-│  │                    Observability (Langfuse)                 │    │
-│  │    trace every LLM call · tool usage · latency · cost      │    │
-│  └────────────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────┐
+│                             klaus Core                                     │
+│                                                                            │
+│  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────────┐        │
+│  │  FastAPI      │  │ Task Router  │  │ Event Bus (SSE)            │       │
+│  │  Gateway      │──│ local-first  │  │ real-time streaming        │       │
+│  │  REST + SSE   │  │ model select │  │ token + tool + phase       │       │
+│  └──────┬───────┘  └──────┬───────┘  └────────────────────────────┘        │
+│         │                 │                                                │
+│  ┌──────┴─────────────────┴──────────────────────────────────────────┐     │
+│  │                  Multi-Agent Orchestrator                          │    │
+│  │   Planner → Human Approval → Dispatch → ReAct Executors           │     │
+│  │   Sense → Plan → Act → Reflect (per step)                         │     │
+│  ├────────────────────────────────────────────────────────────────────┤    │
+│  │                    LangGraph Agent (single-agent fallback)         │    │
+│  │   ReAct loop · memory context · tool execution · tracing          │     │
+│  └──────┬──────────────┬──────────────────┬──────────────────────┘     │
+│         │              │                  │                              │
+│  ┌──────┴──────┐ ┌─────┴──────┐ ┌────────┴────────┐                   │
+│  │ Model       │ │ Superpower │ │ Memory Tree     │                   │
+│  │ Registry    │ │ Registry   │ │ /knowledge      │                   │
+│  │ (LangChain) │ │ (plugins)  │ │ /conversations  │                   │
+│  │ Ollama, HF, │ │ MCP Bridge │ │ /superpowers    │                   │
+│  │ Gemini      │ │ + MD tools │ │ pgvector embeds │                   │
+│  └─────────────┘ └────────────┘ └─────────────────┘                   │
+│  ┌────────────────────────────────────────────────────────────────┐    │
+│  │  PostgreSQL + pgvector (memory, conversations, embeddings)     │    │
+│  │  MCP Server Manager · MD-Based Tools · Langfuse Observability  │    │
+│  └────────────────────────────────────────────────────────────────┘    │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
+
+## ReAct (Reason + Act) Loop
+
+Every execution path in klaus — whether single-agent or multi-agent orchestrator — follows the **Sense → Plan → Act → Reflect** cycle:
+
+```
+┌────────────────────────────────────────────────────────────┐
+│                      ReAct Loop                             │
+│                                                             │
+│  ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐ │
+│  │  SENSE  │───▶│  PLAN   │───▶│   ACT   │───▶│ REFLECT │ │
+│  │         │    │         │    │         │    │         │ │
+│  │ Retrieve│    │ Reason  │    │ Execute │    │Validate │ │
+│  │ context │    │ & break │    │ tools + │    │ output  │ │
+│  │ from    │    │ into    │    │ LLM     │    │ & loop  │ │
+│  │ memory  │    │ steps   │    │ calls   │    │ if fail │ │
+│  └─────────┘    └─────────┘    └─────────┘    └────┬────┘ │
+│       ▲                                            │       │
+│       └────────────────────────────────────────────┘       │
+│                     (retry on failure)                       │
+└────────────────────────────────────────────────────────────┘
+```
+
+| Phase | What it does | Implementation |
+|-------|-------------|----------------|
+| **Sense** | Gathers context — user request, memory, prior step results, relevant knowledge | `_build_step_context()` in orchestrator, `_build_memory_context()` in agent |
+| **Plan** | The LLM reasons about how to approach the task, exposed as thinking/reasoning blocks in the UI | LLM `reasoning_content` streamed as `thinking` SSE events |
+| **Act** | Execute the task using tools (MCP, memory, superpowers) and LLM generation | LangGraph `create_react_agent` with tool harness |
+| **Reflect** | Evaluate the result — check for errors, assess quality, decide if retry is needed | `_reflect()` method compares output against acceptance criteria |
+
+The reflect phase can trigger a retry (up to 2 retries per step), feeding the failure context back into the sense phase.
+
+## UI Architecture
+
+Klaus uses a **two-layout system**:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Chat Layout                                                 │
+│  ┌──────────┐ ┌────────────────────────────────────────────┐│
+│  │ Sidebar  │ │  Header: Klaus  [Docs] [●] [☀] [⚙]       ││
+│  │          │ │  ┌──────────────────────────────────────┐  ││
+│  │ Sessions │ │  │  Chat / Flow / Knowledge content     │  ││
+│  │          │ │  │                                      │  ││
+│  │          │ │  │  To-dos widget · Task queue          │  ││
+│  │          │ │  │  Thinking blocks · Phase indicators  │  ││
+│  │          │ │  │  Orchestrator plan visualization     │  ││
+│  └──────────┘ │  └──────────────────────────────────────┘  ││
+│               └────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│  Settings Layout  (gear icon from chat header)              │
+│  ┌──────────────┐ ┌────────────────────────────────────────┐│
+│  │ ← Back to    │ │  Page Title                            ││
+│  │   Chat       │ │  ┌──────────────────────────────────┐  ││
+│  │              │ │  │                                  │  ││
+│  │ SETTINGS     │ │  │  Page content                    │  ││
+│  │  Models      │ │  │  (Models, Routing, MCP, etc.)    │  ││
+│  │  Routing     │ │  │                                  │  ││
+│  │  MCP Servers │ │  │                                  │  ││
+│  │  Superpowers │ │  └──────────────────────────────────┘  ││
+│  │              │ └────────────────────────────────────────┘│
+│  │ OBSERVABILITY│                                           │
+│  │  Pipeline    │                                           │
+│  │  Activity    │                                           │
+│  │  Knowledge   │                                           │
+│  │              │                                           │
+│  │ [Docs] [●◉]  │                                           │
+│  └──────────────┘                                           │
+└─────────────────────────────────────────────────────────────┘
+```
+
+The settings panel uses a persistent sidebar with grouped navigation (inspired by Cursor/VS Code settings). The chat page keeps a compact header with a gear icon to enter settings.
+
+## Extension Model
+
+Klaus is designed to be extended by developers at multiple levels:
+
+| Extension point | Complexity | Description |
+|----------------|-----------|-------------|
+| **MD tool** (`data/tools/*.md`) | Drop a file | Standalone tool with Python implementation |
+| **MD agent** (`data/agents/*.md`) | Drop a file | Specialist agent with capabilities, system prompt, preferred model |
+| **Superpower class** | Python class | Full-featured plugin with lifecycle, memory, multi-tool bundles, API clients |
+| **Model backend** | Python class | New LLM provider (Ollama, Gemini, OpenAI, vLLM, etc.) |
+| **MCP server** | JSON config | External tool server auto-discovered from `mcp.json` or registered via API |
+| **UI page** | React component | New page in the settings panel or chat area |
+
+See the [Developer Extension Guide](./guide/extending-klaus.md) for walkthroughs with example prompts.
 
 ## Comparison with Other Agent Frameworks
 
@@ -75,7 +155,7 @@ This document explains klaus's architecture by comparing it to the major AI agen
 | Concept | AutoGen | klaus |
 |---|---|---|
 | Agent runtime | Event-driven actor model with `@event`, `@rpc` decorators | Request-driven ReAct agent, event bus for side-channel |
-| Multi-agent | Group chat, nested conversations, agent-to-agent messaging | Single agent today, multi-agent via A2A planned |
+| Multi-agent | Group chat, nested conversations, agent-to-agent messaging | Orchestrator with planner → specialist agents |
 | Memory | Teachable agents with local storage | Hierarchical tree with path-based access |
 | Tool use | Function decorators, code execution sandbox | MCP bridge + superpower tools |
 | Model support | OpenAI, Anthropic, local via LiteLLM | Model registry with local-first routing |
@@ -96,11 +176,11 @@ This document explains klaus's architecture by comparing it to the major AI agen
 
 | Concept | CrewAI | klaus |
 |---|---|---|
-| Agent identity | Role + goal + backstory strings | Single klaus agent with superpowers |
-| Orchestration | Crew assigns tasks to role-specialized agents | Task router picks model, single agent executes |
-| Memory | Short-term (conversation), long-term (vector), entity memory | Tree-structured memory with keyword search |
-| Tools | `@tool` decorator, built-in web search/file ops | MCP tools + superpower tools |
-| Delegation | Agent A can delegate to Agent B | Not yet — planned |
+| Agent identity | Role + goal + backstory strings | MD-based agents with capabilities + system prompt |
+| Orchestration | Crew assigns tasks to role-specialized agents | Planner → human approval → specialist agents |
+| Memory | Short-term (conversation), long-term (vector), entity memory | Tree-structured memory with keyword + semantic search |
+| Tools | `@tool` decorator, built-in web search/file ops | MCP tools + superpower tools + MD tools |
+| Delegation | Agent A can delegate to Agent B | Orchestrator dispatches to specialist agents |
 
 **What klaus can learn from CrewAI:**
 - **Role specialization** — Instead of one agent with all tools, create specialist agents (coding agent, research agent, writing agent) that the main agent can delegate to. Each specialist could be a superpower.
@@ -119,7 +199,7 @@ This document explains klaus's architecture by comparing it to the major AI agen
 |---|---|---|
 | Agent definition | `Agent(name, instructions, tools, handoffs)` | `klausAgent` with memory context + superpower tools |
 | Tool use | `@function_tool` decorator with auto-schema | MCP tools auto-bridged to LangChain tools |
-| Handoffs | Agent transfers control to specialist | Not yet — a natural fit for superpowers |
+| Handoffs | Agent transfers control to specialist | Orchestrator dispatches to specialist agents |
 | Guardrails | Input/output validation with custom logic | Not yet |
 | Model | OpenAI models only | Any model via registry (Ollama, HF, OpenAI, etc.) |
 | Memory | Conversation history in thread | Tree-structured persistent memory |
@@ -140,7 +220,7 @@ This document explains klaus's architecture by comparing it to the major AI agen
 | Concept | Semantic Kernel | klaus |
 |---|---|---|
 | Plugin system | Kernel plugins with functions | Superpowers with LangChain tools |
-| Orchestration | 5 patterns (sequential, concurrent, handoff, group, magentic) | Single ReAct agent (patterns planned) |
+| Orchestration | 5 patterns (sequential, concurrent, handoff, group, magentic) | Planner + specialist agents with human approval |
 | State | AgentThread abstraction | Memory tree |
 | Languages | C#, Python, Java | Python |
 
@@ -180,6 +260,10 @@ Most frameworks force a choice: you either use their models, their tools, or the
 
 4. **MCP as the tool standard** — While other frameworks define custom tool interfaces, klaus uses Model Context Protocol for external tool integration, making it compatible with the growing MCP ecosystem.
 
+5. **Human-in-the-loop orchestration** — The planner pauses for human approval before executing. Corrections are stored and improve future plans. No other framework has this feedback loop built in.
+
+6. **MD-based extensibility** — Drop a Markdown file to add a tool or agent. No code changes, no restarts of the core (restart required but no code edits). This lowers the barrier for non-Python developers to contribute.
+
 ## Planned Architecture Additions
 
 Based on the analysis above, these are the architectural additions planned for klaus, roughly in priority order:
@@ -203,6 +287,8 @@ Use this table to find the right files when making changes:
 |--------------|----------------|
 | **Add a model backend** | `models/backends/new.py`, `models/registry.py` (factory), `config/klaus.yaml`, `pyproject.toml` |
 | **Add a superpower/tool** | `superpowers/builtin/new.py`, `app.py` (register), `tests/` |
+| **Add an MD tool** | `data/tools/your_tool.md` (no code changes) |
+| **Add an MD agent** | `data/agents/your_agent.md` (no code changes) |
 | **Add an API endpoint** | `api/routes/new.py`, `app.py` (mount router) |
 | **Add a UI page** | `ui/src/pages/New.tsx`, `ui/src/App.tsx` (type + render), `ui/src/components/Layout.tsx` (nav) |
 | **Change the memory tree structure** | `memory/tree.py`, possibly `memory/store.py` and `memory/index.py` |
@@ -225,3 +311,4 @@ Detailed guides for each area:
 | [UI_GUIDE.md](./UI_GUIDE.md) | React frontend architecture, design system, adding pages |
 | [API_REFERENCE.md](./API_REFERENCE.md) | All REST and SSE endpoints |
 | [MEMORY_SYSTEM.md](./MEMORY_SYSTEM.md) | Memory tree, pgvector embeddings, hybrid search |
+| [Extending klaus](./guide/extending-klaus.md) | Developer extension guide with example prompts |

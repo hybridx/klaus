@@ -148,8 +148,8 @@ export default function Routing() {
   const existingTasks = Object.keys(rules);
 
   return (
-    <div className="h-full overflow-y-auto p-4 flex flex-col gap-4">
-      <p className="text-[11px] text-stone-400 dark:text-stone-500">
+    <div className="h-full overflow-y-auto p-6 flex flex-col gap-4">
+      <p className="text-[13px] text-stone-600 dark:text-stone-400">
         Route tasks to specific backends and models. Add keywords for smarter automatic classification.
       </p>
 

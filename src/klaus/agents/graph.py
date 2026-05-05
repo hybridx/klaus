@@ -336,7 +336,9 @@ class klausAgent:  # noqa: N801
             )
             await self._memory.maybe_save()
 
-    def handle_plan_approval(self, action: str, edits: list[dict] | None = None, reason: str = "") -> bool:
+    def handle_plan_approval(
+        self, action: str, edits: list[dict] | None = None, reason: str = ""
+    ) -> bool:
         """Forward a plan approval/rejection/edit to the active orchestrator."""
         if self._active_orchestrator:
             self._active_orchestrator.set_approval(action, edits, reason)

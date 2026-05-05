@@ -83,7 +83,8 @@ class TestLoadMcpJson:
     def test_load_cursor_format(self, tmp_path):
         mcp_json = tmp_path / "mcp.json"
         mcp_json.write_text(
-            '{"mcpServers": {"products": {"command": "npx", "args": ["@scarlet-mesh/mcp-products"]}}}'
+            '{"mcpServers": {"products": {"command": "npx", '
+            '"args": ["@scarlet-mesh/mcp-products"]}}}'
         )
         result = load_mcp_json(mcp_json)
         assert "products" in result

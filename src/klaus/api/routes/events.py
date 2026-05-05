@@ -7,7 +7,7 @@ import json
 import logging
 import re
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -45,7 +45,7 @@ async def sse_stream(request: Request, session_id: str = Query(...)):
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=30.0)
                     yield f"data: {event.to_json()}\n\n"
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     yield ": keepalive\n\n"
         finally:
             state.event_bus.remove_sse(session_id)
@@ -161,10 +161,7 @@ def _is_complex(text: str, threshold: int = 2) -> bool:
         return True
 
     distinct_verbs = set(_ACTION_VERB_RE.findall(lower))
-    if len(distinct_verbs) >= 3:
-        return True
-
-    return False
+    return len(distinct_verbs) >= 3
 
 
 async def _find_vision_model(state, decision):
@@ -192,7 +189,8 @@ async def _find_vision_model(state, decision):
 
 
 async def _handle_chat(session_id: str, msg: dict, state) -> None:
-    """Handle a chat message — uses orchestrator for complex requests, single-agent for simple ones."""
+    """Handle a chat message — uses orchestrator for complex requests,
+    single-agent for simple ones."""
     from klaus.routing.splitter import split_tasks
 
     messages_raw = msg.get("messages", [])
@@ -350,7 +348,9 @@ async def _handle_chat(session_id: str, msg: dict, state) -> None:
 
         await _send_status(session_id, state, chat_id, "memory", "Searching memory for context...")
 
-        await _send_status(session_id, state, chat_id, "generating", f"Generating with {model_label}...")
+        await _send_status(
+            session_id, state, chat_id, "generating", f"Generating with {model_label}..."
+        )
 
         try:
             response = await _stream_subtask(
@@ -480,7 +480,13 @@ async def _handle_orchestrated_chat(
         etype = event.get("type", "")
 
         if etype == "status":
-            await _send_status(session_id, state, chat_id, event.get("step", ""), event.get("detail", ""))
+            await _send_status(
+                session_id,
+                state,
+                chat_id,
+                event.get("step", ""),
+                event.get("detail", ""),
+            )
         elif etype == "plan.created":
             await state.event_bus.send_to_session(
                 session_id, EventType.PLAN_CREATED,

@@ -519,8 +519,16 @@ class FakeRegistry:
 
 EXPECTED_PLAN_JSON = [
     {"description": "Analyze the attached image", "task_type": "image", "depends_on": []},
-    {"description": "Write a hello world program with the name Deepesh", "task_type": "coding", "depends_on": []},
-    {"description": "Write a poem about the hello world program", "task_type": "creative", "depends_on": [1]},
+    {
+        "description": "Write a hello world program with the name Deepesh",
+        "task_type": "coding",
+        "depends_on": [],
+    },
+    {
+        "description": "Write a poem about the hello world program",
+        "task_type": "creative",
+        "depends_on": [1],
+    },
 ]
 
 
@@ -549,7 +557,6 @@ class TestIsComplex:
 
     @staticmethod
     def _is_complex(text):
-        import re
         from klaus.api.routes.events import _is_complex
         return _is_complex(text)
 
@@ -715,9 +722,10 @@ class TestApprovalLifecycle:
             await asyncio.sleep(0.05)
             orch.set_approval("approve")
 
-        asyncio.create_task(approve_later())
+        approval_task = asyncio.create_task(approve_later())
         result = await orch._wait_for_approval(timeout=2.0)
         assert result["action"] == "approve"
+        await approval_task
 
     @pytest.mark.asyncio
     async def test_wait_receives_rejection(self):
@@ -728,10 +736,11 @@ class TestApprovalLifecycle:
             await asyncio.sleep(0.05)
             orch.set_approval("reject", reason="bad plan")
 
-        asyncio.create_task(reject_later())
+        reject_task = asyncio.create_task(reject_later())
         result = await orch._wait_for_approval(timeout=2.0)
         assert result["action"] == "reject"
         assert result["reason"] == "bad plan"
+        await reject_task
 
     @pytest.mark.asyncio
     async def test_wait_receives_edit(self):
@@ -746,11 +755,12 @@ class TestApprovalLifecycle:
                 reason="needs clarity",
             )
 
-        asyncio.create_task(edit_later())
+        edit_task = asyncio.create_task(edit_later())
         result = await orch._wait_for_approval(timeout=2.0)
         assert result["action"] == "edit"
         assert len(result["edits"]) == 1
         assert result["reason"] == "needs clarity"
+        await edit_task
 
     @pytest.mark.asyncio
     async def test_timeout_auto_approves(self):
@@ -770,9 +780,10 @@ class TestApprovalLifecycle:
             await asyncio.sleep(0.05)
             orch.set_approval("approve")
 
-        asyncio.create_task(approve_later())
+        approval_task = asyncio.create_task(approve_later())
         result = await orch._wait_for_approval(timeout=2.0)
         assert result["action"] == "approve"
+        await approval_task
 
 
 # ── End-to-end pipeline simulation ──────────────────────────────────────────

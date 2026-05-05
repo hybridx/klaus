@@ -106,12 +106,10 @@ async def lifespan(app: FastAPI):
                 discovered_mcp[name] = cfg
                 logger.info("Loaded MCP server '%s' from %s", name, mcp_path)
 
-    from pathlib import Path as _P
-
     _auto_paths = [
-        _P("mcp.json"),
-        _P(".cursor/mcp.json"),
-        _P.home() / ".cursor" / "mcp.json",
+        Path("mcp.json"),
+        Path(".cursor/mcp.json"),
+        Path.home() / ".cursor" / "mcp.json",
     ]
     for ap in _auto_paths:
         if ap.exists():
@@ -181,7 +179,10 @@ async def lifespan(app: FastAPI):
     # ── Agent ────────────────────────────────────────────────
     orch_cfg = settings.orchestrator.model_dump() if hasattr(settings, "orchestrator") else None
     state.init_agent(orchestrator_config=orch_cfg, md_agents=md_agents)
-    logger.info("LangGraph agent initialized (orchestrator: %s)", "enabled" if orch_cfg else "disabled")
+    logger.info(
+        "LangGraph agent initialized (orchestrator: %s)",
+        "enabled" if orch_cfg else "disabled",
+    )
 
     from klaus.agents.tracing import is_langfuse_configured
 

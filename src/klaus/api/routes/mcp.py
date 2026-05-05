@@ -18,7 +18,10 @@ class RegisterMCPRequest(BaseModel):
     args: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
     url: str | None = Field(default=None, description="SSE endpoint URL (alternative to command)")
-    headers: dict[str, str] = Field(default_factory=dict, description="HTTP headers for SSE transport")
+    headers: dict[str, str] = Field(
+        default_factory=dict,
+        description="HTTP headers for SSE transport",
+    )
     auto_connect: bool = Field(default=True, description="Connect immediately after registration")
 
 

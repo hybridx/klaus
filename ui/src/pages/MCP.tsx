@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Server, Wrench, Loader2, Plus, Trash2, Plug, ChevronDown, ChevronRight, Globe, Terminal, AlertCircle, RefreshCw } from 'lucide-react';
+import { Server, Wrench, Loader2, Plus, Trash2, Plug, ChevronDown, ChevronRight, Globe, Terminal, AlertCircle, RefreshCw, KeyRound } from 'lucide-react';
 import clsx from 'clsx';
 
 interface MCPTool {
@@ -288,6 +288,7 @@ export default function MCP() {
         {servers.map((s) => {
           const isConnected = s.status === 'connected';
           const isError = s.status === 'error';
+          const needsAuth = s.status === 'needs_auth';
           const isExpanded = expanded === s.name;
 
           return (
@@ -297,9 +298,11 @@ export default function MCP() {
                 'border rounded-xl overflow-hidden shadow-sm',
                 isConnected
                   ? 'border-emerald-200 dark:border-emerald-800 bg-white dark:bg-stone-800/60'
-                  : isError
-                    ? 'border-red-200 dark:border-red-800 bg-white dark:bg-stone-800/60'
-                    : 'border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800/60',
+                  : needsAuth
+                    ? 'border-amber-200 dark:border-amber-800 bg-white dark:bg-stone-800/60'
+                    : isError
+                      ? 'border-red-200 dark:border-red-800 bg-white dark:bg-stone-800/60'
+                      : 'border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800/60',
               )}
             >
               <div className="flex items-center gap-3 px-4 py-3">
@@ -307,9 +310,11 @@ export default function MCP() {
                   'w-8 h-8 rounded-lg flex items-center justify-center text-[13px] font-bold shrink-0',
                   isConnected
                     ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400'
-                    : isError
-                      ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400'
-                      : 'bg-stone-100 dark:bg-stone-700 text-stone-500 dark:text-stone-400',
+                    : needsAuth
+                      ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400'
+                      : isError
+                        ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400'
+                        : 'bg-stone-100 dark:bg-stone-700 text-stone-500 dark:text-stone-400',
                 )}>
                   {s.name[0].toUpperCase()}
                 </div>
@@ -331,25 +336,60 @@ export default function MCP() {
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className={clsx(
                       'w-2 h-2 rounded-full',
-                      isConnected ? 'bg-emerald-500' : isError ? 'bg-red-500' : 'bg-amber-400',
+                      isConnected ? 'bg-emerald-500'
+                        : needsAuth ? 'bg-amber-500'
+                          : isError ? 'bg-red-500'
+                            : 'bg-stone-400',
                     )} />
                     <span className={clsx(
                       'text-[11px]',
                       isConnected ? 'text-emerald-600 dark:text-emerald-400'
-                        : isError ? 'text-red-600 dark:text-red-400'
-                          : 'text-stone-500 dark:text-stone-400',
+                        : needsAuth ? 'text-amber-600 dark:text-amber-400'
+                          : isError ? 'text-red-600 dark:text-red-400'
+                            : 'text-stone-500 dark:text-stone-400',
                     )}>
                       {isConnected
                         ? `${s.tools.length} tool${s.tools.length !== 1 ? 's' : ''} enabled`
-                        : isError
-                          ? 'Connection error'
-                          : s.status}
+                        : needsAuth
+                          ? 'Needs authentication'
+                          : isError
+                            ? 'Connection error'
+                            : s.status}
                     </span>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0">
-                  {!isConnected && (
+                  {needsAuth && (
+                    <button
+                      onClick={() => {
+                        const token = prompt(
+                          `Enter auth token / API key for ${s.name}:\n\n`
+                          + 'This will be sent as an Authorization: Bearer header.',
+                        );
+                        if (!token) return;
+                        (async () => {
+                          await fetch(`/api/mcp/servers/${s.name}`, { method: 'DELETE' });
+                          await fetch('/api/mcp/servers', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              name: s.name,
+                              url: s.url,
+                              headers: { Authorization: `Bearer ${token}` },
+                              auto_connect: true,
+                            }),
+                          });
+                          load();
+                        })();
+                      }}
+                      className="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded-lg font-medium
+                                 bg-amber-500 text-white hover:bg-amber-600 transition-colors"
+                    >
+                      <KeyRound size={13} /> Authenticate
+                    </button>
+                  )}
+                  {!isConnected && !needsAuth && (
                     <button
                       onClick={() => connectServer(s.name)}
                       disabled={connecting === s.name}
@@ -388,7 +428,16 @@ export default function MCP() {
                 </div>
               </div>
 
-              {/* Error detail */}
+              {/* Auth / error detail */}
+              {needsAuth && (
+                <div className="px-4 pb-3 flex items-start gap-2">
+                  <KeyRound size={13} className="text-amber-500 shrink-0 mt-0.5" />
+                  <span className="text-[11px] text-amber-700 dark:text-amber-400">
+                    This server requires authentication.
+                    Click "Authenticate" to provide a token or API key.
+                  </span>
+                </div>
+              )}
               {isError && s.error && (
                 <div className="px-4 pb-3 flex items-start gap-2">
                   <AlertCircle size={13} className="text-red-500 shrink-0 mt-0.5" />

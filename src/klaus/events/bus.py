@@ -7,8 +7,7 @@ import json
 import logging
 import time
 from collections import deque
-from collections.abc import AsyncIterator
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from enum import StrEnum
 
 logger = logging.getLogger(__name__)

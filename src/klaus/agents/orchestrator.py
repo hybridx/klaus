@@ -20,7 +20,6 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.prebuilt import create_react_agent
 
 from klaus.agents.md_agents import AgentSpec
-from klaus.agents.tracing import get_langfuse_handler
 from klaus.models.base import ChatMessage
 from klaus.routing.router import classify_task
 
@@ -93,20 +92,27 @@ def _build_planner_prompt(
         "Output:\n"
         "[\n"
         '  {"description": "Write a Python script", "task_type": "coding", "depends_on": []},\n'
-        '  {"description": "Create a poem about nature", "task_type": "creative", "depends_on": []}\n'
+        '  {"description": "Create a poem about nature", '
+        '"task_type": "creative", "depends_on": []}\n'
         "]\n\n"
         "EXAMPLE:\n"
         'User: "Create hello world code and write a poem about it and describe my image"\n'
         "Output:\n"
         "[\n"
-        '  {"description": "Create a hello world program", "task_type": "coding", "depends_on": []},\n'
-        '  {"description": "Write a poem about the hello world program", "task_type": "creative", "depends_on": [0]},\n'
-        '  {"description": "Describe what is in the attached image", "task_type": "image", "depends_on": []}\n'
+        '  {"description": "Create a hello world program", '
+        '"task_type": "coding", "depends_on": []},\n'
+        '  {"description": "Write a poem about the hello world program", '
+        '"task_type": "creative", "depends_on": [0]},\n'
+        '  {"description": "Describe what is in the attached image", '
+        '"task_type": "image", "depends_on": []}\n'
         "]\n"
     ]
 
     if routing_rules:
-        parts.append("\nAvailable specialist models (each task_type routes to a different model):\n")
+        parts.append(
+            "\nAvailable specialist models "
+            "(each task_type routes to a different model):\n"
+        )
         for task, rule in routing_rules.items():
             model = rule.get("preferred_model", "default")
             desc = rule.get("description", "")
@@ -367,7 +373,12 @@ class Orchestrator:
                             step.backend = bname
                             step.model = vm
                             break
-                logger.info("Image step %d → vision model %s on %s", step.index, step.model, step.backend)
+                logger.info(
+                    "Image step %d → vision model %s on %s",
+                    step.index,
+                    step.model,
+                    step.backend,
+                )
         elif not self._registry.model_supports(step.backend or "", step.model, "tools"):
             fallback = await self._registry.find_capable_model(step.backend or "", "tools")
             if fallback:
@@ -490,7 +501,7 @@ class Orchestrator:
             self._approval_result = {}
         try:
             await asyncio.wait_for(self._approval_event.wait(), timeout=timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning("Plan approval timed out after %.0fs, auto-approving", timeout)
             return {"action": "approve"}
         finally:
@@ -519,7 +530,12 @@ class Orchestrator:
         return new_steps
 
     async def _store_correction(
-        self, user_input: str, original_plan: list[dict], action: str, edits: list[dict], reason: str,
+        self,
+        user_input: str,
+        original_plan: list[dict],
+        action: str,
+        edits: list[dict],
+        reason: str,
     ) -> None:
         """Store a plan correction in memory so the planner improves over time."""
         if not self._memory:
@@ -531,7 +547,10 @@ class Orchestrator:
         edit_desc = ""
         if edits:
             edit_desc = "; ".join(
-                f"Step {e.get('index', '?')}: {e.get('description', 'removed' if e.get('remove') else 'edited')}"
+                (
+                    f"Step {e.get('index', '?')}: "
+                    f"{e.get('description', 'removed' if e.get('remove') else 'edited')}"
+                )
                 for e in edits
             )
 
@@ -667,7 +686,13 @@ class Orchestrator:
                 await self._store_correction(
                     user_input, plan_data, "reject", [], approval.get("reason", ""),
                 )
-                yield {"type": "token", "content": "Plan was rejected. Let me know if you'd like me to try a different approach."}
+                yield {
+                    "type": "token",
+                    "content": (
+                        "Plan was rejected. Let me know if you'd like me to try a "
+                        "different approach."
+                    ),
+                }
                 yield {"type": "done"}
                 return
 

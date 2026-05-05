@@ -144,7 +144,11 @@ class OllamaBackend:
 
             model_info = data.get("model_info") or {}
             info_keys_lower = " ".join(model_info.keys()).lower()
-            if "vision" in info_keys_lower or "clip" in info_keys_lower or "projector" in info_keys_lower:
+            if (
+                "vision" in info_keys_lower
+                or "clip" in info_keys_lower
+                or "projector" in info_keys_lower
+            ):
                 meta["capabilities"]["vision"] = True
 
             details = data.get("details") or {}

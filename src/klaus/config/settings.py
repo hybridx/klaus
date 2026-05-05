@@ -58,7 +58,10 @@ class MCPServerConfig(BaseModel):
     args: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
     enabled: bool = Field(default=True)
-    url: str | None = Field(default=None, description="SSE/HTTP transport URL (alternative to command)")
+    url: str | None = Field(
+        default=None,
+        description="SSE/HTTP transport URL (alternative to command)",
+    )
 
 
 def load_mcp_json(path: str | Path) -> dict[str, MCPServerConfig]:

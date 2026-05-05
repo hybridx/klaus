@@ -112,7 +112,7 @@ def parse_md_tool(path: Path) -> StructuredTool | None:
 
     if impl_code:
         namespace: dict[str, Any] = {}
-        exec(impl_code, namespace)  # noqa: S102
+        exec(impl_code, namespace)
         run_fn = namespace.get("run")
         if run_fn is None:
             logger.warning("MD tool %s: implementation must define a 'run' function", tool_name)

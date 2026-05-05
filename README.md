@@ -263,8 +263,9 @@ klaus/
 ├── data/agents/                 # MD-based specialist agents
 │   ├── code-expert.md
 │   ├── creative-writer.md
-│   └── analyst.md
-├── tests/                       # Test suite (214 tests)
+│   ├── analyst.md
+│   └── github-reviewer.md
+├── tests/                       # Test suite (275+ tests)
 ├── ui/                          # Frontend (React + Vite + Tailwind + React Flow)
 │   ├── package.json
 │   ├── vite.config.ts
@@ -278,7 +279,7 @@ klaus/
 │       │   ├── useEventStream.ts # SSE + REST hook
 │       │   └── useTheme.ts      # Light/dark theme hook
 │       ├── components/
-│       │   ├── Layout.tsx       # App shell, header, nav menu
+│       │   ├── Layout.tsx       # App shell: chat header + settings sidebar panel
 │       │   ├── Sidebar.tsx      # Conversation history sidebar
 │       │   └── Markdown.tsx     # Markdown renderer (react-markdown)
 │       └── pages/
@@ -349,6 +350,7 @@ Full documentation is hosted at **[hybridx.github.io/klaus](https://hybridx.gith
 | [SSE Protocol](https://hybridx.github.io/klaus/reference/sse) | Real-time SSE + REST protocol |
 | [Configuration](https://hybridx.github.io/klaus/reference/configuration) | YAML + env var reference |
 | [Database Schema](https://hybridx.github.io/klaus/reference/database) | PostgreSQL + pgvector schema |
+| [Extending klaus](https://hybridx.github.io/klaus/guide/extending-klaus) | Developer guide with example prompts for adding superpowers |
 
 See also [CONTRIBUTING.md](CONTRIBUTING.md) for setup, code standards, and PR process.
 

@@ -4,9 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
-from klaus.agents.md_agents import AgentSpec, load_md_agents, parse_md_agent
+from klaus.agents.md_agents import load_md_agents, parse_md_agent
 
 
 class TestParseMdAgent:

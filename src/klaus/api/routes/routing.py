@@ -110,7 +110,7 @@ async def update_rule(task: str, req: UpdateRuleRequest):
     data = existing.model_dump()
     update = {k: v for k, v in req.model_dump().items() if v is not None}
 
-    if "keywords" in update and update["keywords"]:
+    if update.get("keywords"):
         conflict = _check_keyword_overlap(state, task, update["keywords"])
         if conflict:
             raise HTTPException(

@@ -93,6 +93,7 @@ We have detailed guides for each area of the codebase. Start with the relevant g
 | **[docs/API_REFERENCE.md](docs/API_REFERENCE.md)** | All REST and SSE endpoints |
 | **[docs/MEMORY_SYSTEM.md](docs/MEMORY_SYSTEM.md)** | Memory tree, embeddings, pgvector |
 | **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** | System overview and framework comparison |
+| **[docs/guide/extending-klaus.md](docs/guide/extending-klaus.md)** | Developer extension guide with example prompts |
 
 ### Quick Summary
 
@@ -131,6 +132,8 @@ We have detailed guides for each area of the codebase. Start with the relevant g
 ### Documentation
 
 - Update `README.md` if you add user-facing features
+- Update `docs/ARCHITECTURE.md` if the change affects system architecture
+- Update `docs/guide/extending-klaus.md` if adding a new extension point
 - Add docstrings to public classes and functions
 - Configuration changes should be reflected in `config/klaus.yaml`
 

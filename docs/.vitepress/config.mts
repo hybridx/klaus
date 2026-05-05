@@ -41,6 +41,7 @@ export default defineConfig({
         {
           text: 'Extending klaus',
           items: [
+            { text: 'Developer Extension Guide', link: '/guide/extending-klaus' },
             { text: 'Adding Tools', link: '/guide/adding-tools' },
             { text: 'Adding Agents (MD)', link: '/guide/orchestration#md-based-agents' },
             { text: 'Adding Model Backends', link: '/guide/adding-backends' },
