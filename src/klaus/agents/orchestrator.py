@@ -158,8 +158,8 @@ class Orchestrator:
             return ""
 
         lines = []
-        for node in results:
-            lines.append(f"• {node.content}")
+        for result in results:
+            lines.append(f"• {result.node.content}")
         return "\n".join(lines)
 
     async def plan(self, user_input: str) -> list[PlanStep]:

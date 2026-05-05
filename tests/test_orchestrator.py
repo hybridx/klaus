@@ -6,6 +6,7 @@ import pytest
 
 from klaus.agents.md_agents import AgentSpec
 from klaus.agents.orchestrator import Orchestrator, PlanStep, _chunk_text
+from klaus.memory.store import MemoryManager
 
 
 class TestPlanStep:
@@ -139,6 +140,68 @@ class TestResolveStep:
         result = orch.resolve_step(step)
         assert result.backend == "ollama"
         assert result.model == "granite-code:8b"
+
+
+class TestLoadCorrections:
+    @pytest.mark.asyncio
+    async def test_no_memory_returns_empty(self):
+        class FakeRegistry:
+            pass
+        class FakeRouter:
+            pass
+
+        orch = Orchestrator(
+            model_registry=FakeRegistry(),
+            task_router=FakeRouter(),
+        )
+        result = await orch._load_corrections("test query")
+        assert result == ""
+
+    @pytest.mark.asyncio
+    async def test_with_matching_corrections(self):
+        class FakeRegistry:
+            pass
+        class FakeRouter:
+            pass
+
+        mm = MemoryManager()
+        mm.tree.put(
+            "/knowledge/plan-corrections/c1",
+            "Use granite-code for coding tasks",
+            tags=["plan-correction"],
+        )
+        mm.tree.put(
+            "/knowledge/plan-corrections/c2",
+            "Always run tests after code generation",
+            tags=["plan-correction"],
+        )
+
+        orch = Orchestrator(
+            model_registry=FakeRegistry(),
+            task_router=FakeRouter(),
+            memory=mm,
+        )
+        result = await orch._load_corrections("plan correction coding")
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    @pytest.mark.asyncio
+    async def test_no_matching_corrections(self):
+        class FakeRegistry:
+            pass
+        class FakeRouter:
+            pass
+
+        mm = MemoryManager()
+        mm.tree.put("/knowledge/unrelated", "some unrelated data", tags=["other"])
+
+        orch = Orchestrator(
+            model_registry=FakeRegistry(),
+            task_router=FakeRouter(),
+            memory=mm,
+        )
+        result = await orch._load_corrections("zzz nothing matches zzz")
+        assert result == ""
 
 
 class TestApproval:
