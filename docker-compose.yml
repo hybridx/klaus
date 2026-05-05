@@ -47,6 +47,28 @@ services:
       - ollama_data:/root/.ollama
     restart: unless-stopped
 
+  # One-shot init: pulls required models into the ollama container.
+  # Runs once on first `podman-compose up`, then exits.
+  ollama-init:
+    image: curlimages/curl:latest
+    depends_on:
+      ollama:
+        condition: service_started
+    restart: "no"
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        echo "Waiting for Ollama to be ready..."
+        until curl -sf http://ollama:11434/api/tags > /dev/null 2>&1; do sleep 2; done
+        echo "Pulling required models..."
+        curl -sf -X POST http://ollama:11434/api/pull -d '{"name":"llama3.2","stream":false}'
+        echo "✓ llama3.2"
+        curl -sf -X POST http://ollama:11434/api/pull -d '{"name":"nomic-embed-text","stream":false}'
+        echo "✓ nomic-embed-text"
+        curl -sf -X POST http://ollama:11434/api/pull -d '{"name":"gemma4:latest","stream":false}'
+        echo "✓ gemma4:latest"
+        echo "All required models ready."
+
 volumes:
   postgres_data:
   ollama_data:

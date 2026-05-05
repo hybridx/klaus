@@ -47,7 +47,7 @@ For a deep dive comparing klaus to LangGraph, AutoGen, CrewAI, OpenAI Agents SDK
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/) — handles venv, deps, and script execution
 - [Podman Desktop](https://podman-desktop.io/) — runs PostgreSQL (required) and Ollama containers
-- [Ollama](https://ollama.ai/) running locally (for the default backend)
+- [Ollama](https://ollama.ai/) running locally (for models *and* embeddings)
 - Google Gemini API key (optional — for cloud model fallback, see [Configuration](#api-keys))
 
 ### Local development
@@ -57,16 +57,12 @@ git clone <repo-url> && cd klaus
 
 # Start PostgreSQL (required) — pgvector for embeddings
 bash scripts/start-postgres.sh
-ollama pull llama3.2
 
-# Build the frontend
-cd ui && npm install && npm run build && cd ..
-
-# Start the backend
+# Start the dev server — auto-pulls required Ollama models & builds UI
 uv run klaus-dev
 ```
 
-`uv` handles the Python virtual environment and dependencies automatically — no separate install step.
+`uv` handles the Python virtual environment and dependencies automatically — no separate install step. On first run, `klaus-dev` auto-pulls required Ollama models (`llama3.2`, `nomic-embed-text`, `gemma4:latest`) and builds the React UI.
 
 ### Common commands
 
@@ -87,9 +83,8 @@ npm run preview               # Preview production build
 
 ```bash
 podman-compose up -d
-
-# Pull a model into the Ollama container
-podman-compose exec ollama ollama pull llama3.2
+# Required models (llama3.2, nomic-embed-text, gemma4) are pulled automatically
+# by the ollama-init service on first startup.
 ```
 
 ## API
@@ -242,7 +237,7 @@ orchestrator:
 log_level: info
 ```
 
-With `prefer_local: true` (the default), klaus uses Ollama for routine tasks and falls back to Gemini when local models are unavailable or when a task routing rule explicitly targets it.
+With `prefer_local: true` (the default), klaus runs entirely on local models — including embeddings (`nomic-embed-text` via Ollama). Cloud backends (Gemini, HuggingFace) are only used when explicitly configured in task routing rules. Image analysis routes through the `image` task rule (default: `gemma4:latest`).
 
 The `orchestrator` section enables multi-agent orchestration — complex requests are decomposed by a planner model and dispatched to specialist agents. The planner presents its plan for human approval before execution, and learns from corrections to improve future plans. Define specialist agents as simple Markdown files in `data/agents/`. See [Orchestration Guide](https://hybridx.github.io/klaus/guide/orchestration).
 

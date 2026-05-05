@@ -165,7 +165,7 @@ async def test_routing_rules_empty(db: Database):
 
 @pytest.mark.asyncio
 async def test_save_and_search_embedding(db: Database):
-    vec = [0.1] * 384
+    vec = [0.1] * 768
     await db.save_embedding("/knowledge/test", "test content", vec)
 
     results = await db.search_embeddings(vec, limit=5)
@@ -176,7 +176,7 @@ async def test_save_and_search_embedding(db: Database):
 
 @pytest.mark.asyncio
 async def test_embedding_upsert(db: Database):
-    vec = [0.2] * 384
+    vec = [0.2] * 768
     await db.save_embedding("/knowledge/x", "v1", vec)
     await db.save_embedding("/knowledge/x", "v2", vec)
 
@@ -186,7 +186,7 @@ async def test_embedding_upsert(db: Database):
 
 @pytest.mark.asyncio
 async def test_delete_embeddings(db: Database):
-    vec = [0.3] * 384
+    vec = [0.3] * 768
     await db.save_embedding("/knowledge/del/a", "a", vec)
     await db.save_embedding("/knowledge/del/b", "b", vec)
 

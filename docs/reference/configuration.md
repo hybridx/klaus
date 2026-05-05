@@ -14,6 +14,12 @@ database:
   pool_min: 2               # asyncpg minimum pool size
   pool_max: 10              # asyncpg maximum pool size
 
+# Models auto-pulled on `klaus-dev` startup if missing from Ollama
+required_models:
+  - llama3.2               # default chat model
+  - nomic-embed-text       # embedding model for memory search
+  - gemma4:latest          # vision model for image analysis
+
 model_backends:
   ollama:
     type: ollama             # Backend type (ollama | gemini | huggingface | custom)
@@ -51,6 +57,14 @@ task_routing:
   chat:
     preferred_backend: ollama
     preferred_model: llama3.2
+  image:                             # Used when images are attached
+    preferred_backend: ollama
+    preferred_model: gemma4:latest
+
+# Embedding model — fully local via Ollama (used for memory semantic search)
+embedding:
+  model: nomic-embed-text            # Any Ollama embedding model
+  base_url: http://localhost:11434   # Ollama URL
 
 orchestrator:
   planner_backend: ollama    # Backend for planner/consolidator model

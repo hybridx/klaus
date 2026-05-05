@@ -144,6 +144,30 @@ def _is_complex(text: str, threshold: int = 2) -> bool:
     return any(m in lower for m in multi_markers)
 
 
+async def _find_vision_model(state, decision):
+    """Fallback: search for a vision-capable model if no 'image' routing rule matched."""
+    if state.model_registry.model_supports(decision.backend, decision.model, "vision"):
+        return decision
+    vision_model = await state.model_registry.find_capable_model(decision.backend, "vision")
+    if not vision_model:
+        for bname in state.model_registry.list_backends():
+            if bname == decision.backend:
+                continue
+            vm = await state.model_registry.find_capable_model(bname, "vision")
+            if vm:
+                vision_model = vm
+                decision.backend = bname
+                break
+    if vision_model:
+        original = decision.model
+        decision.model = vision_model
+        decision.reason += f" (switched from {original}: needs vision)"
+        logger.info("Image detected, switched from %s to vision model %s", original, vision_model)
+    else:
+        logger.warning("Image detected but no vision model found on any backend")
+    return decision
+
+
 async def _handle_chat(session_id: str, msg: dict, state) -> None:
     """Handle a chat message — uses orchestrator for complex requests, single-agent for simple ones."""
     from klaus.routing.splitter import split_tasks
@@ -201,7 +225,20 @@ async def _handle_chat(session_id: str, msg: dict, state) -> None:
 
         await _send_status(session_id, state, chat_id, "routing", "Selecting best model...")
 
-        if explicit_backend:
+        if has_images and not explicit_backend:
+            image_decision = state.task_router.resolve(task="image")
+            if image_decision.model:
+                decision = image_decision
+                logger.info(
+                    "Image detected — using 'image' routing rule: %s on %s",
+                    decision.model, decision.backend,
+                )
+            else:
+                decision = state.task_router.resolve(task=task)
+                decision = await _find_vision_model(state, decision)
+            use_tools = False
+            logger.info("Image present — disabling tools for direct vision analysis")
+        elif explicit_backend:
             decision = state.task_router.resolve(
                 task=task,
                 requested_backend=explicit_backend,
@@ -209,39 +246,6 @@ async def _handle_chat(session_id: str, msg: dict, state) -> None:
             )
         else:
             decision = state.task_router.resolve(task=task)
-
-        if has_images and not explicit_model:
-            if not state.model_registry.model_supports(
-                decision.backend, decision.model, "vision"
-            ):
-                vision_model = await state.model_registry.find_capable_model(
-                    decision.backend, "vision"
-                )
-                if not vision_model:
-                    for bname in state.model_registry.list_backends():
-                        if bname == decision.backend:
-                            continue
-                        vm = await state.model_registry.find_capable_model(bname, "vision")
-                        if vm:
-                            vision_model = vm
-                            decision.backend = bname
-                            break
-
-                if vision_model:
-                    original = decision.model
-                    decision.model = vision_model
-                    decision.reason += f" (switched from {original}: needs vision)"
-                    logger.info(
-                        "Image detected, switched from %s to vision model %s",
-                        original, vision_model,
-                    )
-                else:
-                    logger.warning(
-                        "Image detected but no vision model found on any backend",
-                    )
-
-            use_tools = False
-            logger.info("Image present — disabling tools for direct vision analysis")
 
         if use_tools and not state.model_registry.model_supports(
             decision.backend, decision.model, "tools"

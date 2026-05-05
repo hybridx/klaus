@@ -7,6 +7,8 @@ Provides smarter retrieval than raw tree.search() by combining:
 4. Embedding-based semantic search via pgvector (when configured)
 
 The index doesn't store data — it queries the tree and ranks results.
+
+Embedding generation is fully local via Ollama (default: nomic-embed-text).
 """
 
 from __future__ import annotations
@@ -17,12 +19,18 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import httpx
+
 from klaus.memory.tree import MemoryNode, MemoryTree
 
 if TYPE_CHECKING:
     from klaus.db import Database
 
 logger = logging.getLogger(__name__)
+
+OLLAMA_EMBED_URL = "http://localhost:11434/api/embed"
+DEFAULT_EMBED_MODEL = "nomic-embed-text"
+EMBED_DIMENSIONS = 768
 
 
 @dataclass
@@ -34,51 +42,83 @@ class SearchResult:
 
 
 class EmbeddingModel:
-    """Lazy-loaded sentence-transformers model for generating embeddings.
+    """Generates embeddings locally via Ollama's /api/embed endpoint.
 
-    Uses all-MiniLM-L6-v2 (384 dimensions, ~80MB, CPU-friendly).
-    The model is loaded on first use and cached in memory.
+    Default model: nomic-embed-text (768 dimensions, runs fully local).
+    Falls back gracefully to keyword-only search if Ollama is unreachable.
     """
 
     _instance: EmbeddingModel | None = None
-    _model = None
 
-    def __init__(self) -> None:
-        self._model = None
+    def __init__(
+        self,
+        model: str = DEFAULT_EMBED_MODEL,
+        base_url: str = "http://localhost:11434",
+    ) -> None:
+        self._model = model
+        self._url = f"{base_url}/api/embed"
+        self._available: bool | None = None
 
     @classmethod
-    def get(cls) -> EmbeddingModel:
-        if cls._instance is None:
-            cls._instance = cls()
+    def get(cls, model: str | None = None, base_url: str | None = None) -> EmbeddingModel:
+        if cls._instance is None or (model and model != cls._instance._model):
+            cls._instance = cls(
+                model=model or DEFAULT_EMBED_MODEL,
+                base_url=base_url or "http://localhost:11434",
+            )
         return cls._instance
 
-    def encode(self, text: str) -> list[float]:
-        if self._model is None:
-            try:
-                from sentence_transformers import SentenceTransformer
-                logger.info("Loading embedding model (all-MiniLM-L6-v2)...")
-                self._model = SentenceTransformer("all-MiniLM-L6-v2")
-                logger.info("Embedding model ready")
-            except ImportError:
+    def _check_available(self) -> bool:
+        if self._available is not None:
+            return self._available
+        try:
+            resp = httpx.post(self._url, json={"model": self._model, "input": "ping"}, timeout=10)
+            self._available = resp.status_code == 200
+            if self._available:
+                logger.info("Ollama embedding model '%s' ready", self._model)
+            else:
                 logger.warning(
-                    "sentence-transformers not installed — "
-                    "falling back to keyword search only"
+                    "Ollama embed returned %d — keyword search only",
+                    resp.status_code,
                 )
-                return []
-            except Exception as exc:
-                logger.error("Failed to load embedding model: %s", exc)
-                return []
+        except Exception as exc:
+            logger.warning("Ollama embedding unavailable (%s) — keyword search only", exc)
+            self._available = False
+        return self._available
 
-        vec = self._model.encode(text, normalize_embeddings=True)
-        return vec.tolist()
+    def encode(self, text: str) -> list[float]:
+        if not self._check_available():
+            return []
+        try:
+            resp = httpx.post(
+                self._url,
+                json={"model": self._model, "input": text},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            embeddings = resp.json().get("embeddings", [])
+            return embeddings[0] if embeddings else []
+        except Exception as exc:
+            logger.error("Ollama embed failed: %s", exc)
+            return []
 
     def encode_batch(self, texts: list[str]) -> list[list[float]]:
-        if self._model is None:
-            self.encode("")
-            if self._model is None:
-                return [[] for _ in texts]
-        vecs = self._model.encode(texts, normalize_embeddings=True)
-        return [v.tolist() for v in vecs]
+        if not self._check_available():
+            return [[] for _ in texts]
+        try:
+            resp = httpx.post(
+                self._url,
+                json={"model": self._model, "input": texts},
+                timeout=60,
+            )
+            resp.raise_for_status()
+            embeddings = resp.json().get("embeddings", [])
+            if len(embeddings) == len(texts):
+                return embeddings
+            return [[] for _ in texts]
+        except Exception as exc:
+            logger.error("Ollama batch embed failed: %s", exc)
+            return [[] for _ in texts]
 
 
 class MemoryIndex:

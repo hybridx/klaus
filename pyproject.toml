@@ -22,7 +22,6 @@ dependencies = [
     "langfuse>=2.0.0",
     "python-dotenv>=1.0.0",
     "asyncpg>=0.30.0",
-    "sentence-transformers>=3.0.0",
 ]
 
 [project.optional-dependencies]

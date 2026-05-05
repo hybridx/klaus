@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS embeddings (
     id         SERIAL PRIMARY KEY,
     path       TEXT NOT NULL,
     content    TEXT NOT NULL,
-    embedding  vector(384) NOT NULL,
+    embedding  vector(768) NOT NULL,
     created_at DOUBLE PRECISION NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())
 );
 CREATE INDEX IF NOT EXISTS idx_embed_path ON embeddings(path);
@@ -79,7 +79,27 @@ class Database:
         )
         async with self._pool.acquire() as conn:
             await conn.execute(_SCHEMA)
+            await self._migrate_embedding_dimensions(conn)
         logger.info("PostgreSQL ready at %s", self._url.split("@")[-1])
+
+    @staticmethod
+    async def _migrate_embedding_dimensions(conn) -> None:
+        """Migrate embeddings table from 384-dim to 768-dim if needed."""
+        try:
+            row = await conn.fetchrow(
+                "SELECT atttypmod FROM pg_attribute "
+                "WHERE attrelid = 'embeddings'::regclass AND attname = 'embedding'"
+            )
+            if row and row["atttypmod"] != 768:
+                logger.info(
+                    "Migrating embeddings: %d → 768 dims...",
+                    row["atttypmod"],
+                )
+                await conn.execute("TRUNCATE embeddings")
+                await conn.execute("ALTER TABLE embeddings ALTER COLUMN embedding TYPE vector(768)")
+                logger.info("Embedding migration complete (old data cleared — will re-index)")
+        except Exception:
+            pass
 
     async def close(self) -> None:
         if self._pool:

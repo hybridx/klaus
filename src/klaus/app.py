@@ -42,6 +42,13 @@ async def lifespan(app: FastAPI):
     logger.info("Loading memory tree...")
     await state.memory.startup()
 
+    # ── Embedding model (local via Ollama) ────────────────────
+    from klaus.memory.index import EmbeddingModel
+
+    embed_cfg = settings.embedding
+    EmbeddingModel.get(model=embed_cfg.model, base_url=embed_cfg.base_url)
+    logger.info("Embedding model: %s (local via Ollama at %s)", embed_cfg.model, embed_cfg.base_url)
+
     # ── Model backends ───────────────────────────────────────
     logger.info("Initializing model backends (LangChain)...")
     await state.model_registry.register_from_config(

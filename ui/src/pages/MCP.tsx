@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Server, Wrench, Circle, Loader2, Plus, Trash2 } from 'lucide-react';
+import { Server, Wrench, Circle, Loader2, Plus, Trash2, Plug, Book } from 'lucide-react';
 import clsx from 'clsx';
 
 interface MCPServer {
@@ -12,7 +12,9 @@ export default function MCP() {
   const [servers, setServers] = useState<MCPServer[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [showExamples, setShowExamples] = useState(false);
   const [form, setForm] = useState({ name: '', command: '', args: '' });
+  const [connecting, setConnecting] = useState<string | null>(null);
 
   const load = () => {
     fetch('/api/mcp/servers')
@@ -40,6 +42,15 @@ export default function MCP() {
     load();
   };
 
+  const connectServer = async (name: string) => {
+    setConnecting(name);
+    try {
+      await fetch(`/api/mcp/servers/${name}/connect`, { method: 'POST' });
+      load();
+    } catch { /* */ }
+    setConnecting(null);
+  };
+
   const removeServer = async (name: string) => {
     await fetch(`/api/mcp/servers/${name}`, { method: 'DELETE' });
     load();
@@ -62,15 +73,113 @@ export default function MCP() {
         <p className="text-[11px] text-stone-400 dark:text-stone-600">
           Model Context Protocol servers and their tools.
         </p>
-        <button
-          onClick={() => setShowAdd(!showAdd)}
-          className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-md
-                     bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400
-                     hover:bg-stone-200 dark:hover:bg-stone-700 transition-colors"
-        >
-          <Plus size={12} /> Add Server
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => { setShowExamples(!showExamples); setShowAdd(false); }}
+            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-md
+                       bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400
+                       hover:bg-stone-200 dark:hover:bg-stone-700 transition-colors"
+          >
+            <Book size={12} /> Examples
+          </button>
+          <button
+            onClick={() => { setShowAdd(!showAdd); setShowExamples(false); }}
+            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-md
+                       bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400
+                       hover:bg-stone-200 dark:hover:bg-stone-700 transition-colors"
+          >
+            <Plus size={12} /> Add Server
+          </button>
+        </div>
       </div>
+
+      {showExamples && (
+        <div className="border border-border rounded-lg bg-surface p-3 flex flex-col gap-3">
+          <h3 className="text-[12px] font-semibold text-stone-700 dark:text-stone-300">
+            Adding MCP Servers
+          </h3>
+
+          <div>
+            <p className="text-[11px] font-medium text-stone-600 dark:text-stone-400 mb-1">
+              1. Via klaus.yaml (recommended)
+            </p>
+            <pre className="text-[10px] bg-black/30 rounded-md p-2 overflow-x-auto text-stone-300">
+{`mcp_servers:
+  filesystem:
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+    enabled: true
+  github:
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-github"]
+    env:
+      GITHUB_TOKEN: "ghp_..."
+  brave-search:
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-brave-search"]
+    env:
+      BRAVE_API_KEY: "..."
+`}</pre>
+          </div>
+
+          <div>
+            <p className="text-[11px] font-medium text-stone-600 dark:text-stone-400 mb-1">
+              2. Via Cursor mcp.json (auto-discovered)
+            </p>
+            <pre className="text-[10px] bg-black/30 rounded-md p-2 overflow-x-auto text-stone-300">
+{`// .cursor/mcp.json or ~/.cursor/mcp.json
+{
+  "mcpServers": {
+    "sqlite": {
+      "command": "uvx",
+      "args": ["mcp-server-sqlite", "--db", "data.db"]
+    }
+  }
+}`}</pre>
+          </div>
+
+          <div>
+            <p className="text-[11px] font-medium text-stone-600 dark:text-stone-400 mb-1">
+              3. Via REST API
+            </p>
+            <pre className="text-[10px] bg-black/30 rounded-md p-2 overflow-x-auto text-stone-300">
+{`curl -X POST http://localhost:8000/api/mcp/servers \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "name": "filesystem",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+  }'`}</pre>
+          </div>
+
+          <div>
+            <p className="text-[11px] font-medium text-stone-600 dark:text-stone-400 mb-1">
+              4. Via Markdown file (data/tools/)
+            </p>
+            <pre className="text-[10px] bg-black/30 rounded-md p-2 overflow-x-auto text-stone-300">
+{`---
+name: git_status
+description: Get current git repository status
+parameters:
+  repo_path:
+    type: string
+    description: Path to the git repository
+---
+import subprocess
+result = subprocess.run(
+    ["git", "status", "--short"],
+    cwd=repo_path,
+    capture_output=True, text=True
+)
+return result.stdout or "Clean working tree"`}</pre>
+          </div>
+
+          <p className="text-[10px] text-stone-400 mt-1">
+            Auto-discovered servers from mcp.json are registered but not connected automatically.
+            Click "Connect" below to activate them.
+          </p>
+        </div>
+      )}
 
       {showAdd && (
         <div className="border border-border rounded-lg bg-surface p-3 flex flex-col gap-2">
@@ -120,15 +229,37 @@ export default function MCP() {
             )}>
               {s.status}
             </span>
-            <button
-              onClick={() => removeServer(s.name)}
-              className="ml-auto p-1 rounded text-stone-400 hover:text-red-500 transition-colors"
-            >
-              <Trash2 size={12} />
-            </button>
+            <div className="ml-auto flex items-center gap-1">
+              {s.status !== 'connected' && (
+                <button
+                  onClick={() => connectServer(s.name)}
+                  disabled={connecting === s.name}
+                  className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded
+                             bg-green/10 text-green hover:bg-green/20 transition-colors
+                             disabled:opacity-50"
+                >
+                  {connecting === s.name ? (
+                    <Loader2 size={10} className="animate-spin" />
+                  ) : (
+                    <Plug size={10} />
+                  )}
+                  Connect
+                </button>
+              )}
+              <button
+                onClick={() => removeServer(s.name)}
+                className="p-1 rounded text-stone-400 hover:text-red-500 transition-colors"
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
           </div>
           {s.tools.length === 0 ? (
-            <div className="px-3 py-2 text-[11px] text-stone-400">No tools discovered</div>
+            <div className="px-3 py-2 text-[11px] text-stone-400">
+              {s.status !== 'connected'
+                ? 'Not connected — click Connect to discover tools'
+                : 'No tools discovered'}
+            </div>
           ) : (
             <div className="divide-y divide-border">
               {s.tools.map((t) => (
@@ -149,7 +280,8 @@ export default function MCP() {
 
       {servers.length === 0 && (
         <div className="text-center text-[12px] text-stone-400 py-8">
-          No MCP servers registered. Add one above or configure in klaus.yaml.
+          No MCP servers registered. Click "Examples" above to see how to add them,
+          or use "Add Server" for quick registration.
         </div>
       )}
     </div>

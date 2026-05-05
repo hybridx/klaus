@@ -114,6 +114,16 @@ class OrchestratorConfig(BaseModel):
     )
 
 
+class EmbeddingConfig(BaseModel):
+    """Embedding model configuration — fully local by default via Ollama."""
+
+    model: str = Field(default="nomic-embed-text", description="Ollama embedding model name")
+    base_url: str = Field(
+        default="http://localhost:11434",
+        description="Ollama base URL for embeddings",
+    )
+
+
 class ServerConfig(BaseModel):
     """HTTP server configuration."""
 
@@ -131,6 +141,7 @@ class Settings(BaseSettings):
 
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
+    embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
     model_backends: dict[str, ModelBackendConfig] = Field(
         default_factory=lambda: {
             "ollama": ModelBackendConfig(type="ollama"),
@@ -140,6 +151,10 @@ class Settings(BaseSettings):
     mcp_config_files: list[str] = Field(
         default_factory=list,
         description="Paths to mcp.json files (Cursor/Claude format) to auto-load",
+    )
+    required_models: list[str] = Field(
+        default_factory=lambda: ["llama3.2", "nomic-embed-text", "gemma4:latest"],
+        description="Ollama models to auto-pull on dev startup if missing",
     )
     default_backend: str = Field(default="ollama")
     task_routing: dict[str, TaskRoutingRule] = Field(

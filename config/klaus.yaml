@@ -10,6 +10,17 @@ server:
 default_backend: ollama
 prefer_local: true
 
+# Models that must be available locally before startup.
+# klaus-dev will auto-pull any missing ones from Ollama.
+required_models:
+  - llama3.2             # default chat model
+  - nomic-embed-text     # embedding model for memory search
+  - gemma4:latest        # vision model for image analysis
+
+embedding:
+  model: nomic-embed-text
+  base_url: http://localhost:11434
+
 # Multi-agent orchestrator: uses a planner model to decompose complex requests
 # and dispatch sub-tasks to the best-fit models.
 orchestrator:
@@ -66,6 +77,9 @@ task_routing:
   summarization:
     preferred_backend: ollama
     preferred_model: mistral
+  image:
+    preferred_backend: ollama
+    preferred_model: gemma4:latest
 
 # MCP servers — three ways to register:
 #
