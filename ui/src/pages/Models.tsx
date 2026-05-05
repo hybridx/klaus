@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Server, Cpu, Circle, Loader2 } from 'lucide-react';
+import { Server, Cpu, Circle, Loader2, Eye, Wrench, Brain, MessageSquare } from 'lucide-react';
 import clsx from 'clsx';
 
 interface ModelInfo {
@@ -7,8 +7,18 @@ interface ModelInfo {
   backend: string;
   size: string;
   quantization: string;
+  context_length: number | null;
+  parameter_count: string | null;
+  family: string | null;
   capabilities: string[];
 }
+
+const CAP_CONFIG: Record<string, { icon: typeof Cpu; label: string; bg: string; text: string }> = {
+  chat:     { icon: MessageSquare, label: 'Chat',     bg: 'bg-stone-100 dark:bg-stone-800',          text: 'text-stone-500 dark:text-stone-400' },
+  tools:    { icon: Wrench,        label: 'Tools',    bg: 'bg-emerald-100 dark:bg-emerald-900/30',   text: 'text-emerald-600 dark:text-emerald-400' },
+  vision:   { icon: Eye,           label: 'Vision',   bg: 'bg-purple-100 dark:bg-purple-900/30',     text: 'text-purple-600 dark:text-purple-400' },
+  thinking: { icon: Brain,         label: 'Thinking', bg: 'bg-amber-100 dark:bg-amber-900/30',       text: 'text-amber-600 dark:text-amber-400' },
+};
 
 interface BackendInfo {
   name: string;
@@ -103,31 +113,69 @@ export default function Models() {
               <div className="px-3 py-2 text-[11px] text-stone-400">No models loaded</div>
             ) : (
               <div className="divide-y divide-border">
-                {backendModels.map((m) => (
-                  <div key={m.name} className="flex items-center gap-2 px-3 py-2">
-                    <Cpu size={11} className="text-accent shrink-0" />
-                    <span className="text-[12px] font-medium truncate">{m.name}</span>
-                    <div className="ml-auto flex items-center gap-1">
-                      {m.capabilities?.includes('tools') && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded-full
-                                         bg-emerald-100 dark:bg-emerald-900/30
-                                         text-emerald-600 dark:text-emerald-400">
-                          tools
-                        </span>
-                      )}
-                      {m.size && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-surface-strong text-stone-500">
-                          {m.size}
-                        </span>
-                      )}
-                      {m.quantization && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-surface-strong text-stone-500">
-                          {m.quantization}
-                        </span>
-                      )}
+                {backendModels.map((m) => {
+                  const ctx = m.context_length
+                    ? m.context_length >= 1000
+                      ? `${Math.round(m.context_length / 1024)}K ctx`
+                      : `${m.context_length} ctx`
+                    : null;
+
+                  return (
+                    <div key={m.name} className="px-3 py-2.5 space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <Cpu size={11} className="text-accent shrink-0" />
+                        <span className="text-[12px] font-medium truncate">{m.name}</span>
+                        <div className="ml-auto flex items-center gap-1">
+                          {m.parameter_count && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-sky-100 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 font-medium">
+                              {m.parameter_count}
+                            </span>
+                          )}
+                          {m.size && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-surface-strong text-stone-500">
+                              {m.size}
+                            </span>
+                          )}
+                          {ctx && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-surface-strong text-stone-500">
+                              {ctx}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1 pl-5">
+                        {(m.capabilities || []).map((cap) => {
+                          const cfg = CAP_CONFIG[cap];
+                          if (!cfg) return null;
+                          const Icon = cfg.icon;
+                          return (
+                            <span
+                              key={cap}
+                              className={clsx(
+                                'inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded-full font-medium',
+                                cfg.bg, cfg.text,
+                              )}
+                            >
+                              <Icon size={9} />
+                              {cfg.label}
+                            </span>
+                          );
+                        })}
+                        {m.family && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-surface-strong text-stone-400 dark:text-stone-500 ml-1">
+                            {m.family}
+                          </span>
+                        )}
+                        {m.quantization && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-surface-strong text-stone-400 dark:text-stone-500">
+                            {m.quantization}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
