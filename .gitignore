@@ -9,7 +9,13 @@ build/
 .pytest_cache/
 *.egg
 .env
-data/
+
+# Data — keep example agents/tools/skills, ignore runtime files
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/memory.json
+data/images/
 
 # Frontend
 ui/node_modules/
