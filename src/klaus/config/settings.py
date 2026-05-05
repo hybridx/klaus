@@ -52,7 +52,12 @@ class TaskRoutingRule(BaseModel):
 
 
 class MCPServerConfig(BaseModel):
-    """Configuration for a pre-registered MCP server."""
+    """Configuration for a pre-registered MCP server.
+
+    OAuth is handled automatically by the MCP SDK at the protocol level
+    (metadata discovery, dynamic client registration, PKCE).  No manual
+    auth config is needed — just provide the URL and click Connect.
+    """
 
     command: str = Field(default="", description="Command to launch the MCP server")
     args: list[str] = Field(default_factory=list)
@@ -62,13 +67,25 @@ class MCPServerConfig(BaseModel):
         default=None,
         description="SSE/HTTP transport URL (alternative to command)",
     )
+    headers: dict[str, str] = Field(
+        default_factory=dict,
+        description="HTTP headers for SSE/HTTP transport (e.g. Authorization)",
+    )
 
 
 def load_mcp_json(path: str | Path) -> dict[str, MCPServerConfig]:
     """Load MCP servers from a Cursor/Claude-style mcp.json file.
 
-    Supports the standard format:
-        { "mcpServers": { "name": { "command": "...", "args": [...] } } }
+    Supports the standard format with optional auth:
+        {
+          "mcpServers": {
+            "name": { "command": "...", "args": [...] },
+            "atlas": {
+              "url": "https://...",
+              "auth": { "type": "oauth2", "authorize_url": "...", ... }
+            }
+          }
+        }
     """
     import json
 
@@ -83,12 +100,23 @@ def load_mcp_json(path: str | Path) -> dict[str, MCPServerConfig]:
     for name, cfg in servers_raw.items():
         if not isinstance(cfg, dict):
             continue
+
+        command = cfg.get("command", "")
+        args = cfg.get("args", [])
+
+        # Handle commands with args baked in, e.g. "npx chrome-devtools-mcp@latest"
+        if command and " " in command and not args:
+            parts = command.split()
+            command = parts[0]
+            args = parts[1:]
+
         result[name] = MCPServerConfig(
-            command=cfg.get("command", ""),
-            args=cfg.get("args", []),
+            command=command,
+            args=args,
             env=cfg.get("env", {}),
             enabled=True,
             url=cfg.get("url"),
+            headers=cfg.get("headers", {}),
         )
     return result
 

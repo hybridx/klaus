@@ -2,27 +2,43 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import logging
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from klaus.api.deps import get_state
+from klaus.events.bus import EventType
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/mcp", tags=["mcp"])
 
 
 class RegisterMCPRequest(BaseModel):
     name: str = Field(..., description="Unique name for the MCP server")
-    command: str = Field(default="", description="Command to launch the server (stdio transport)")
+    command: str = Field(
+        default="",
+        description="Command to launch the server (stdio transport)",
+    )
     args: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
-    url: str | None = Field(default=None, description="SSE endpoint URL (alternative to command)")
+    url: str | None = Field(
+        default=None,
+        description="SSE endpoint URL (alternative to command)",
+    )
     headers: dict[str, str] = Field(
         default_factory=dict,
         description="HTTP headers for SSE transport",
     )
-    auto_connect: bool = Field(default=True, description="Connect immediately after registration")
+    auto_connect: bool = Field(
+        default=True,
+        description="Connect immediately after registration",
+    )
 
 
 class CallToolRequest(BaseModel):
@@ -74,26 +90,38 @@ async def unregister_server(name: str):
 
 
 @router.post("/servers/{name}/connect")
-async def connect_server(name: str):
-    """Connect to a registered but disconnected MCP server."""
+async def connect_server(name: str, request: Request):
+    """Connect to a registered MCP server.
+
+    For URL-based servers that require OAuth, the SDK handles the full
+    PKCE flow automatically.  If authorization is needed the response
+    includes an ``auth_url`` that the UI should open in a new tab.
+    """
     state = get_state()
     try:
-        await state.mcp_manager.connect(name)
         entry = state.mcp_manager._get(name)
-        return {
-            "status": "connected",
-            "name": name,
-            "tools": [{"name": t.name, "description": t.description} for t in entry.tools],
-        }
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except FileNotFoundError as exc:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Server command not found: {exc}. Is the MCP server installed?",
-        ) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    base = str(request.base_url).rstrip("/")
+    base = base.replace("://0.0.0.0", "://localhost")
+    callback_url = f"{base}/api/mcp/auth/callback"
+
+    with contextlib.suppress(Exception):
+        await state.mcp_manager.connect(
+            name, callback_url=callback_url,
+        )
+
+    return {
+        "status": entry.status.value,
+        "name": name,
+        "tools": [
+            {"name": t.name, "description": t.description}
+            for t in entry.tools
+        ],
+        "error": entry.error,
+        "auth_url": entry._auth_url,
+    }
 
 
 @router.get("/servers/{name}/tools")
@@ -140,3 +168,53 @@ async def list_all_tools():
         ]
         for server, tools in all_tools.items()
     }
+
+
+# ------------------------------------------------------------------
+# OAuth callback — the MCP SDK's OAuthClientProvider redirects here
+# ------------------------------------------------------------------
+
+
+@router.get("/auth/callback", response_class=HTMLResponse)
+async def oauth_callback(request: Request):
+    """OAuth2 callback — signals the SDK to complete the token exchange.
+
+    After the user consents in the browser, the OAuth provider redirects
+    here with ``code`` and ``state`` query parameters.  We pass these to
+    the manager which unblocks the SDK's ``callback_handler``.
+    """
+    code = request.query_params.get("code")
+    state_token = request.query_params.get("state")
+
+    if not code:
+        return HTMLResponse(
+            "<h2>Authorization failed</h2>"
+            "<p>Missing authorization code.</p>",
+            status_code=400,
+        )
+
+    state = get_state()
+
+    try:
+        server_name = state.mcp_manager.receive_auth_callback(
+            code, state_token,
+        )
+    except ValueError as exc:
+        return HTMLResponse(
+            f"<h2>Authorization failed</h2><p>{exc!s}</p>",
+            status_code=400,
+        )
+
+    await asyncio.sleep(3)
+
+    state.event_bus.emit(
+        EventType.MCP_REGISTERED,
+        {"name": server_name, "event": "auth_complete"},
+    )
+
+    return HTMLResponse(
+        f"<h2>Authorization successful!</h2>"
+        f"<p>MCP server <b>{server_name}</b> is authenticating. "
+        f"You can close this tab.</p>"
+        f"<script>window.close()</script>",
+    )

@@ -121,16 +121,21 @@ mcp_config_files:
   - /path/to/other/mcp.json
 ```
 
-The `mcp.json` format is the standard Cursor/Claude format:
+The `mcp.json` format is the standard Cursor/Claude format. OAuth is handled automatically by the MCP SDK — no auth config needed:
 
 ```json
 {
   "mcpServers": {
     "products": { "command": "npx", "args": ["@scarlet-mesh/mcp-products"] },
-    "devtools": { "command": "npx", "args": ["chrome-devtools-mcp@latest"] }
+    "devtools": { "command": "npx", "args": ["chrome-devtools-mcp@latest"] },
+    "atlassian": {
+      "url": "https://mcp.atlassian.com/v1/mcp/authv2"
+    }
   }
 }
 ```
+
+Click **Connect** on any server in Settings → MCP. Stdio servers (npx-based) connect automatically with a lenient stream wrapper that handles non-compliant server banners — matching Cursor's behaviour. For OAuth servers (like Atlassian), the MCP SDK automatically discovers auth endpoints, registers a client, generates a PKCE challenge, and opens the consent page — the same mechanism Cursor uses. No `client_id` or auth config needed.
 
 You can also register servers at runtime via API:
 
@@ -260,11 +265,12 @@ klaus/
 │   ├── calculator.md
 │   ├── date_time.md
 │   └── text_transform.md
-├── data/agents/                 # MD-based specialist agents
+├── data/agents/                 # MD-based specialist agents (use MCP tools)
 │   ├── code-expert.md
 │   ├── creative-writer.md
 │   ├── analyst.md
-│   └── github-reviewer.md
+│   ├── github-reviewer.md
+│   └── jira-developer.md       # Uses Atlassian MCP server
 ├── tests/                       # Test suite (275+ tests)
 ├── ui/                          # Frontend (React + Vite + Tailwind + React Flow)
 │   ├── package.json
@@ -316,7 +322,7 @@ klaus/
     │   ├── base.py              # Superpower abstract class
     │   ├── registry.py          # Superpower lifecycle manager
     │   └── builtin/
-    │       ├── mcp_bridge.py    # MCP tool bridge
+    │       ├── mcp_bridge.py    # MCP tool bridge (agents access MCP tools)
     │       ├── memory_tools.py  # Memory read/write/search
     │       ├── skills.py        # Self-improving skills system
     │       └── image_gen.py     # Image generation (HF)
@@ -350,7 +356,7 @@ Full documentation is hosted at **[hybridx.github.io/klaus](https://hybridx.gith
 | [SSE Protocol](https://hybridx.github.io/klaus/reference/sse) | Real-time SSE + REST protocol |
 | [Configuration](https://hybridx.github.io/klaus/reference/configuration) | YAML + env var reference |
 | [Database Schema](https://hybridx.github.io/klaus/reference/database) | PostgreSQL + pgvector schema |
-| [Extending klaus](https://hybridx.github.io/klaus/guide/extending-klaus) | Developer guide with example prompts for adding superpowers |
+| [Extending klaus](https://hybridx.github.io/klaus/guide/extending-klaus) | Developer guide -- MCP-first agents, OAuth, superpowers |
 
 See also [CONTRIBUTING.md](CONTRIBUTING.md) for setup, code standards, and PR process.
 
@@ -366,6 +372,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, code standards, and how to add
 - [x] **Human-in-the-loop** — plan approval: approve, reject, or edit the orchestrator's plan before execution
 - [x] **Self-improving plans** — corrections stored in memory, used to improve future plan generation
 - [x] **MCP auto-discovery** — auto-load MCP servers from `mcp.json` (Cursor/Claude format)
+- [x] **MCP OAuth2 flow** — SDK-based PKCE authorization, zero config (same flow as Cursor)
+- [x] **Config-driven MCP** — servers from `mcp.json`, OAuth auto-discovered at protocol level
+- [x] **MCP-first agents** — specialist agents use MCP servers (Atlassian, GitHub, etc.) instead of custom integrations
 - [ ] **Agent handoffs** — triage agent delegates to specialist superpowers (inspired by OpenAI Agents SDK)
 - [ ] **A2A protocol** — Agent Cards, task state machine, multi-instance discovery (Google A2A)
 - [ ] **Guardrails** — input/output validation pipeline

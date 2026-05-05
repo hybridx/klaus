@@ -49,7 +49,7 @@ export default function Models() {
   if (loading) {
     return (
       <div className="h-full overflow-y-auto p-4 flex flex-col gap-3">
-        <p className="text-[11px] text-stone-400 dark:text-stone-600">
+        <p className="text-[13px] text-stone-600 dark:text-stone-400">
           Registered model backends and available models.
         </p>
         <div className="flex flex-col gap-3">
@@ -81,7 +81,7 @@ export default function Models() {
 
   return (
     <div className="h-full overflow-y-auto p-4 flex flex-col gap-3">
-      <p className="text-[11px] text-stone-400 dark:text-stone-600">
+      <p className="text-[13px] text-stone-600 dark:text-stone-400">
         Registered model backends and available models.
       </p>
 
@@ -183,7 +183,7 @@ export default function Models() {
       })}
 
       {backends.length === 0 && (
-        <div className="text-center text-[12px] text-stone-400 py-8">No backends registered</div>
+        <div className="text-center text-[13px] text-stone-500 dark:text-stone-500 py-8">No backends registered</div>
       )}
     </div>
   );

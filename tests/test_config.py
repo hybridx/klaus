@@ -117,3 +117,62 @@ class TestLoadMcpJson:
         mcp_json.write_text('{"mcpServers": {}}')
         result = load_mcp_json(mcp_json)
         assert result == {}
+
+    def test_command_with_baked_in_args(self, tmp_path):
+        """Commands like 'npx chrome-devtools-mcp@latest' should be split."""
+        mcp_json = tmp_path / "mcp.json"
+        mcp_json.write_text(
+            '{"mcpServers": {"devtools": '
+            '{"command": "npx chrome-devtools-mcp@latest", "env": {}, "args": []}}}'
+        )
+        result = load_mcp_json(mcp_json)
+        assert result["devtools"].command == "npx"
+        assert result["devtools"].args == ["chrome-devtools-mcp@latest"]
+
+    def test_command_with_baked_in_args_no_explicit_args(self, tmp_path):
+        """When args key is missing entirely, still split the command."""
+        mcp_json = tmp_path / "mcp.json"
+        mcp_json.write_text(
+            '{"mcpServers": {"tool": '
+            '{"command": "uvx some-mcp-server --port 8080"}}}'
+        )
+        result = load_mcp_json(mcp_json)
+        assert result["tool"].command == "uvx"
+        assert result["tool"].args == ["some-mcp-server", "--port", "8080"]
+
+    def test_load_with_auth_fields_ignored(self, tmp_path):
+        """Auth fields in mcp.json are ignored — the SDK handles OAuth at protocol level."""
+        import json
+
+        data = {
+            "mcpServers": {
+                "atlas": {
+                    "url": "https://mcp.atlassian.com/v1/sse",
+                    "auth": {
+                        "type": "oauth2",
+                        "authorize_url": "https://auth.atlassian.com/authorize",
+                    },
+                },
+            },
+        }
+        mcp_json = tmp_path / "mcp.json"
+        mcp_json.write_text(json.dumps(data))
+        result = load_mcp_json(mcp_json)
+        assert result["atlas"].url == "https://mcp.atlassian.com/v1/sse"
+        assert not hasattr(result["atlas"], "auth") or not hasattr(MCPServerConfig, "auth")
+
+    def test_load_with_headers(self, tmp_path):
+        import json
+
+        data = {
+            "mcpServers": {
+                "api": {
+                    "url": "https://example.com/mcp",
+                    "headers": {"Authorization": "Bearer xyz"},
+                },
+            },
+        }
+        mcp_json = tmp_path / "mcp.json"
+        mcp_json.write_text(json.dumps(data))
+        result = load_mcp_json(mcp_json)
+        assert result["api"].headers == {"Authorization": "Bearer xyz"}

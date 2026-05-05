@@ -660,11 +660,11 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
       )}>
         {empty ? (
           <div className="flex flex-col items-center gap-3 px-6 -mt-12">
-            <div className="text-[22px] font-semibold tracking-tight text-stone-700 dark:text-stone-300">
+            <div className="text-[22px] font-semibold tracking-tight text-stone-800 dark:text-stone-300">
               What can I help with?
             </div>
             {selectedModel && (
-              <div className="text-[12px] text-stone-400 dark:text-stone-500">
+              <div className="text-[12px] text-stone-500 dark:text-stone-500">
                 {selectedModel.backend
                   ? <>Using <span className="font-medium">{selectedModel.name}</span> on {selectedModel.backend}</>
                   : <>Using <span className="font-medium">Auto</span> routing</>
@@ -1007,7 +1007,7 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
                     )}
                     <div className="text-[14px] leading-relaxed whitespace-pre-wrap break-words
                                     px-4 py-2.5 rounded-3xl rounded-br-lg max-w-[85%]
-                                    bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-stone-200">
+                                    bg-stone-100 dark:bg-stone-800 text-stone-900 dark:text-stone-200">
                       {m.content}
                     </div>
                   </div>
@@ -1020,8 +1020,8 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
                     <button
                       onClick={() => setPage('routing')}
                       className="group inline-flex items-center gap-1 self-start
-                                 text-[10px] text-stone-500 dark:text-stone-500
-                                 hover:text-stone-700 dark:hover:text-stone-300 transition-colors"
+                                 text-[10px] text-stone-600 dark:text-stone-500
+                                 hover:text-stone-800 dark:hover:text-stone-300 transition-colors"
                       title="View routing rules"
                     >
                       <Cpu size={9} />
@@ -1228,8 +1228,9 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
             </div>
           )}
 
-          <div className="bg-surface border border-border rounded-2xl px-4 py-3
-                          shadow-sm focus-within:shadow-md focus-within:border-stone-300
+          <div className="bg-surface border border-stone-300 dark:border-stone-700
+                          rounded-2xl px-4 py-3
+                          shadow-sm focus-within:shadow-md focus-within:border-stone-400
                           dark:focus-within:border-stone-600 transition-all">
             <textarea
               ref={inputRef}
@@ -1249,7 +1250,7 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
                   <button
                     onClick={() => setShowModelPicker(!showModelPicker)}
                     className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg
-                               text-stone-500 dark:text-stone-400
+                               text-stone-600 dark:text-stone-400
                                hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors"
                   >
                     <span className="max-w-[120px] truncate">
@@ -1334,7 +1335,7 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
                   );
                 })()}
                 {streaming && statusSteps.length === 0 && (
-                  <span className="text-[10px] text-stone-400 dark:text-stone-500 flex items-center gap-1.5">
+                  <span className="text-[10px] text-stone-500 dark:text-stone-500 flex items-center gap-1.5">
                     <Loader2 size={10} className="animate-spin" />
                     Thinking...
                   </span>

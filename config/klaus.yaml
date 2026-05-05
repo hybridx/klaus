@@ -95,7 +95,7 @@ task_routing:
     description: Image analysis and visual understanding
     keywords: [image, photo, picture, visual, describe, identify, what is this, screenshot, diagram]
 
-# MCP servers — three ways to register:
+# ── MCP servers — three ways to register ─────────────────
 #
 # 1. Inline in this file:
 # mcp_servers:
@@ -111,6 +111,15 @@ task_routing:
 #
 # 3. Auto-discovery: Klaus checks mcp.json, .cursor/mcp.json,
 #    and ~/.cursor/mcp.json on startup automatically.
+#
+# OAuth servers: just provide the URL — the MCP SDK handles auth automatically:
+#   {
+#     "mcpServers": {
+#       "Atlassian-MCP-Server": {
+#         "url": "https://mcp.atlassian.com/v1/mcp/authv2"
+#       }
+#     }
+#   }
 
 # Langfuse tracing (optional — set keys to enable observability).
 # Can also be set via LANGFUSE_SECRET_KEY / LANGFUSE_PUBLIC_KEY env vars.

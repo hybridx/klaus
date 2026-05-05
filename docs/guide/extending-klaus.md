@@ -349,22 +349,38 @@ uv run klaus-dev
 
 These prompts describe real-world superpowers that can be built following the same pattern. Use them as starting points.
 
-### Jira Integration
+### Jira Integration (via MCP — no custom code)
 
-> **Build a Jira superpower** that:
-> 1. Connects to a Jira instance using the REST API (`JIRA_URL`, `JIRA_TOKEN` env vars)
-> 2. Provides tools: `jira_get_issue`, `jira_search`, `jira_create_issue`, `jira_update_status`
-> 3. Stores issue context in memory at `/knowledge/jira/{project}/{issue_key}`
-> 4. Create an MD agent `data/agents/project-manager.md` with capabilities `[planning, jira, project_management]`
-> 5. The orchestrator should be able to: read a Jira ticket → create a plan → get human approval → generate code changes → create a PR
->
-> **Files to create:**
-> - `src/klaus/superpowers/builtin/jira_integration.py`
-> - `data/agents/project-manager.md`
->
-> **Files to modify:**
-> - `src/klaus/app.py` (register the superpower)
-> - `.env.example` (add `JIRA_URL`, `JIRA_TOKEN`)
+Jira integration is achieved by connecting the **Atlassian MCP server** — no custom superpower needed. This is the recommended pattern for all external services.
+
+**Setup:**
+1. Add the Atlassian MCP server URL to `mcp.json` (no auth config needed):
+
+```json
+{
+  "mcpServers": {
+    "Atlassian-MCP-Server": {
+      "url": "https://mcp.atlassian.com/v1/mcp/authv2"
+    }
+  }
+}
+```
+
+2. Click **Connect** in Settings → MCP — the SDK automatically discovers OAuth endpoints, registers a client, and opens the Atlassian consent page
+3. After consenting, the connection completes and all Atlassian MCP tools become available
+
+**The autonomous workflow:**
+```
+User: "Work on PROJ-123"
+  → Super Agent creates plan: Read ticket → Analyze → Code → Patch
+  → Human approves plan
+  → Jira Developer agent uses Atlassian MCP to fetch ticket
+  → Agent writes code, stores context in memory
+  → Results presented for human review
+  → Agent uses MCP to update ticket status and add comments
+```
+
+**Why MCP instead of a custom superpower?** The Atlassian MCP server is maintained by Atlassian, supports the full API surface, handles auth correctly, and receives upstream updates. Building a custom Jira superpower would duplicate all of this.
 
 ### Code Execution Sandbox
 
@@ -454,7 +470,7 @@ curl -X POST http://localhost:8000/api/mcp/servers \
   }'
 ```
 
-### Option C: URL-based (SSE/HTTP) with auth
+### Option C: URL-based (SSE/HTTP) with Bearer token
 
 ```bash
 curl -X POST http://localhost:8000/api/mcp/servers \
@@ -466,7 +482,33 @@ curl -X POST http://localhost:8000/api/mcp/servers \
   }'
 ```
 
-Or use the Settings → MCP Servers page in the UI, which provides a visual form for both command-based and URL-based servers.
+### Option D: OAuth2 (automatic — just provide the URL) {#mcp-oauth-config-driven-servers}
+
+For services like Atlassian, GitHub, or Slack that use OAuth2, just provide the server URL:
+
+```json
+{
+  "mcpServers": {
+    "Atlassian-MCP-Server": {
+      "url": "https://mcp.atlassian.com/v1/mcp/authv2"
+    }
+  }
+}
+```
+
+**How it works:**
+
+1. Klaus registers the server and shows it in Settings → MCP
+2. Click **Connect** — the MCP SDK sends the first request, gets a 401
+3. The SDK automatically discovers OAuth metadata from the server's well-known endpoints
+4. The SDK performs dynamic client registration (gets a `client_id`)
+5. The SDK generates a PKCE challenge and returns an authorization URL
+6. Klaus opens the consent page in a new browser tab
+7. After consent, the provider redirects to Klaus's callback (`/api/mcp/auth/callback`)
+8. The SDK exchanges the code for a token and retries the original request
+9. The server status updates to "Connected" automatically
+
+This is the same mechanism Cursor uses. No `client_id`, `token_url`, or any OAuth configuration is needed — the SDK discovers everything from the server's well-known endpoints.
 
 ---
 

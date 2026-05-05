@@ -129,6 +129,7 @@ async def lifespan(app: FastAPI):
                 args=mcp_cfg.args,
                 env=mcp_cfg.env,
                 url=mcp_cfg.url,
+                headers=mcp_cfg.headers or None,
                 auto_connect=auto_connect,
             )
             state.event_bus.emit(EventType.MCP_REGISTERED, {"name": name})
@@ -154,7 +155,6 @@ async def lifespan(app: FastAPI):
     # ── Superpowers ──────────────────────────────────────────
     registry = state.init_superpowers()
 
-    from klaus.superpowers.builtin.image_gen import ImageGeneration
     from klaus.superpowers.builtin.mcp_bridge import MCPBridge
     from klaus.superpowers.builtin.memory_tools import MemoryTools
     from klaus.superpowers.builtin.skills import SkillsSuperpower
@@ -162,7 +162,6 @@ async def lifespan(app: FastAPI):
     await registry.register(MCPBridge(state.mcp_manager, md_tools=md_tools))
     await registry.register(MemoryTools(state.memory, db=state.db))
     await registry.register(SkillsSuperpower(state.memory))
-    await registry.register(ImageGeneration())
     logger.info(
         "Superpowers ready: %d active", registry.active_count
     )

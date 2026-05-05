@@ -30,7 +30,7 @@ export default function App() {
   const [sessionId, setSessionId] = useState(getStoredSession);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const ws = useEventStream(sessionId);
-  const theme = useTheme();
+  useTheme();
 
   const setPage = useCallback((p: Page) => {
     setPageState(p);
@@ -72,7 +72,6 @@ export default function App() {
       page={page}
       setPage={setPage}
       connected={ws.connected}
-      theme={theme}
       sidebarOpen={sidebarOpen}
       onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
       sidebar={sidebar}

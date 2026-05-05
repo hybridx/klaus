@@ -117,14 +117,99 @@ Klaus is designed to be extended by developers at multiple levels:
 
 | Extension point | Complexity | Description |
 |----------------|-----------|-------------|
+| **MCP server** | JSON config | The **preferred** way to add capabilities — external tool servers from `mcp.json` |
+| **MCP server (OAuth)** | Just a URL | OAuth2 servers (Atlassian, GitHub) — SDK handles auth automatically |
+| **MD agent** (`data/agents/*.md`) | Drop a file | Specialist agent that uses MCP tools, with preferred model |
 | **MD tool** (`data/tools/*.md`) | Drop a file | Standalone tool with Python implementation |
-| **MD agent** (`data/agents/*.md`) | Drop a file | Specialist agent with capabilities, system prompt, preferred model |
-| **Superpower class** | Python class | Full-featured plugin with lifecycle, memory, multi-tool bundles, API clients |
+| **Superpower class** | Python class | Only for capabilities that don't have an MCP server (memory, skills) |
 | **Model backend** | Python class | New LLM provider (Ollama, Gemini, OpenAI, vLLM, etc.) |
-| **MCP server** | JSON config | External tool server auto-discovered from `mcp.json` or registered via API |
 | **UI page** | React component | New page in the settings panel or chat area |
 
+### MCP-First Philosophy
+
+**Don't build custom superpowers for things MCP servers already do.** The MCP ecosystem has servers for Jira, GitHub, GitLab, Slack, databases, file systems, and hundreds more. Klaus agents access all of these through the MCP Bridge — no custom code needed.
+
+```
+┌──────────────┐      ┌───────────────┐      ┌──────────────────┐
+│ Super Agent   │─────▶│ Specialist    │─────▶│ MCP Servers      │
+│ (Planner)     │      │ Agents        │      │                  │
+│               │      │               │      │ ● Atlassian      │
+│ Creates plan  │      │ ● CVE Agent   │      │ ● GitHub         │
+│ Human approval│      │ ● Docs Agent  │      │ ● Filesystem     │
+│ Dispatches    │      │ ● Dev Agent   │      │ ● Chrome DevTools│
+└──────────────┘      └───────────────┘      │ ● Products       │
+                                              │ ● Any MCP server │
+                                              └──────────────────┘
+```
+
+The workflow:
+1. **Super Agent** receives a complex request and creates a plan
+2. Human reviews and approves/edits the plan
+3. **Specialist agents** execute each step using their preferred models
+4. Agents call **MCP tools** when they need external data or actions (Jira tickets, GitHub PRs, etc.)
+5. Results flow back to the Super Agent for consolidation
+
+Only build a custom superpower when there's no MCP server for the capability (e.g., the memory system, self-improving skills).
+
 See the [Developer Extension Guide](./guide/extending-klaus.md) for walkthroughs with example prompts.
+
+## MCP OAuth2 Flow
+
+OAuth is handled entirely by the MCP Python SDK's built-in `OAuthClientProvider` — no manual configuration is needed. Just provide the server URL and click Connect:
+
+```
+┌─────────┐      ┌──────────┐       ┌──────────┐      ┌──────────┐
+│ Klaus UI │      │ MCP SDK  │       │ Browser  │      │  OAuth   │
+│          │      │ (httpx)  │       │  Tab     │      │ Provider │
+└────┬─────┘      └────┬─────┘       └────┬─────┘      └────┬─────┘
+     │ Click Connect   │                   │                  │
+     │────────────────▶│                   │                  │
+     │                 │ POST /v1/mcp →401 │                  │
+     │                 │───────────────────────────────────▶ │
+     │                 │                   │                  │
+     │                 │ Discover PRM +    │                  │
+     │                 │ OAuth metadata    │                  │
+     │                 │───────────────────────────────────▶ │
+     │                 │                   │                  │
+     │                 │ Dynamic client    │                  │
+     │                 │ registration      │                  │
+     │                 │───────────────────────────────────▶ │
+     │                 │                   │                  │
+     │                 │ PKCE challenge    │                  │
+     │ {auth_url}      │                   │                  │
+     │◀────────────────│                   │                  │
+     │ window.open()   │                   │                  │
+     │────────────────────────────────────▶│  User consents   │
+     │                 │                   │─────────────────▶│
+     │                 │                   │                  │
+     │                 │ GET /callback?code=X&state=Y         │
+     │                 │◀─────────────────────────────────── │
+     │                 │                   │                  │
+     │                 │ Exchange code     │                  │
+     │                 │ for token (auto)  │                  │
+     │                 │───────────────────────────────────▶ │
+     │                 │                   │                  │
+     │                 │ Retry with token  │                  │
+     │                 │───────────────────────────────────▶ │
+     │                 │                   │                  │
+     │ Poll → connected│                   │                  │
+     │◀────────────────│                   │                  │
+     ▼                 ▼                   ▼                  ▼
+```
+
+This is the same mechanism Cursor uses. No `client_id`, `token_url`, or any OAuth config is needed in `mcp.json` — the SDK discovers everything from the server's well-known endpoints.
+
+### Connection Robustness
+
+Klaus's MCP manager includes several resilience features that match Cursor's behaviour:
+
+| Feature | Purpose |
+|---------|---------|
+| **`LenientReadStream`** | Wraps the stdio read stream to silently drop non-JSON parse errors. Some MCP servers write banners (e.g. "Server running on stdio") to stdout before JSON-RPC begins — Cursor's TypeScript client ignores these, and this wrapper does the same for the Python SDK. |
+| **Async context manager session** | `ClientSession` is entered via `async with` so its internal `_receive_loop` is started before `initialize()` — required by the MCP Python SDK. |
+| **Extended stdio timeout (45 s)** | `npx`-based servers can take 10+ seconds for initial package download. Stdio servers get a 45-second startup window vs 15 seconds for HTTP. |
+| **Cleanup noise suppression** | `BrokenResourceError` / `ClosedResourceError` during task cancellation are expected artefacts, not real errors — they're logged at debug level instead of polluting the error log. |
+| **Streamable HTTP → SSE fallback** | URL-based servers first try the new Streamable HTTP transport; if it fails, fall back to SSE. |
 
 ## Comparison with Other Agent Frameworks
 
@@ -268,16 +353,19 @@ Most frameworks force a choice: you either use their models, their tools, or the
 
 Based on the analysis above, these are the architectural additions planned for klaus, roughly in priority order:
 
-| Feature | Inspired by | Description |
+| Feature | Inspired by | Status |
 |---|---|---|
-| Agent handoffs | OpenAI Agents SDK | Triage agent delegates to specialist superpowers |
-| A2A protocol | Google A2A | Agent Cards, task state machine, multi-instance discovery |
-| Guardrails | OpenAI Agents SDK | Input/output validation pipeline |
-| Orchestration patterns | Semantic Kernel | Sequential, concurrent, handoff strategies in task router |
-| Agent-to-agent messaging | AutoGen | Event-driven communication between specialist agents |
-| Code execution sandbox | AutoGen | Safe code execution as a superpower |
-| Structured output | CrewAI | Pydantic model validation on agent responses |
-| gRPC transport | — | Cross-language agent protocol for external agents |
+| MCP OAuth2 flow | Cursor | **Done** — SDK-based PKCE flow, zero config (same as Cursor) |
+| Config-driven MCP | Cursor/Claude | **Done** — servers from `mcp.json`, OAuth auto-discovered |
+| MCP-first agents | — | **Done** — agents use MCP servers, no custom integrations needed |
+| Agent handoffs | OpenAI Agents SDK | Planned — triage agent delegates to specialist superpowers |
+| A2A protocol | Google A2A | Planned — Agent Cards, task state machine, multi-instance discovery |
+| Guardrails | OpenAI Agents SDK | Planned — input/output validation pipeline |
+| Orchestration patterns | Semantic Kernel | Planned — sequential, concurrent, handoff strategies |
+| Agent-to-agent messaging | AutoGen | Planned — event-driven communication between agents |
+| Code execution sandbox | AutoGen | Planned — safe code execution as a superpower |
+| Structured output | CrewAI | Planned — Pydantic model validation on agent responses |
+| gRPC transport | — | Planned — cross-language agent protocol for external agents |
 
 ## Change Map — What to Touch Where
 

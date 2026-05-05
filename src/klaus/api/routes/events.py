@@ -205,6 +205,14 @@ async def _handle_chat(session_id: str, msg: dict, state) -> None:
         for m in messages_raw:
             await state.db.save_message(chat_id, m["role"], m["content"])
 
+    # Load full conversation history so the agent has context
+    history = await state.db.get_conversation(chat_id, limit=40)
+    if len(history) > len(messages_raw):
+        messages_raw = [
+            {"role": h["role"], "content": h["content"]}
+            for h in history
+        ]
+
     if state.agent is None:
         state.init_agent()
 
