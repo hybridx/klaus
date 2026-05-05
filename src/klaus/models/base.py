@@ -47,4 +47,6 @@ class ModelInfo:
     size: str | None = None
     quantization: str | None = None
     context_length: int | None = None
+    parameter_count: str | None = None
+    family: str | None = None
     capabilities: list[str] = field(default_factory=list)

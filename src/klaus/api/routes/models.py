@@ -21,6 +21,9 @@ async def list_models():
                 "backend": m.backend,
                 "size": m.size,
                 "quantization": m.quantization,
+                "context_length": m.context_length,
+                "parameter_count": m.parameter_count,
+                "family": m.family,
                 "capabilities": m.capabilities,
             }
             for m in models

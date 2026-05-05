@@ -49,6 +49,7 @@ class ModelRegistry:
         self._backends: dict[str, Any] = {}
         self._default_backend: str | None = None
         self._capabilities_cache: dict[str, dict[str, list[str]]] = {}
+        self._model_metadata: dict[str, dict[str, ModelInfo]] = {}
 
     async def register_from_config(
         self,
@@ -103,18 +104,29 @@ class ModelRegistry:
         return result
 
     async def refresh_capabilities(self) -> None:
-        """Fetch and cache capabilities for all models across all backends."""
+        """Fetch and cache capabilities and metadata for all models.
+
+        Called once at startup so that routing, orchestration, and chat model
+        creation all have accurate model information without extra API calls.
+        """
         for backend_name, backend in self._backends.items():
             try:
                 models = await backend.list_models()
                 self._capabilities_cache[backend_name] = {
                     m.name: m.capabilities for m in models
                 }
+                self._model_metadata[backend_name] = {
+                    m.name: m for m in models
+                }
             except Exception as exc:
                 logger.warning(
                     "Failed to refresh capabilities for %s: %s",
                     backend_name, exc,
                 )
+
+    def get_model_info(self, backend: str, model: str) -> ModelInfo | None:
+        """Look up cached metadata for a specific model."""
+        return self._model_metadata.get(backend, {}).get(model)
 
     _PESSIMISTIC_CAPABILITIES = frozenset({"vision"})
 

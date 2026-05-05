@@ -114,14 +114,21 @@ class OllamaBackend:
             if chunk.content:
                 yield chunk.content if isinstance(chunk.content, str) else str(chunk.content)
 
-    async def _check_capabilities(self, model_name: str) -> dict[str, bool]:
-        """Check model capabilities by inspecting its metadata from /api/show.
+    async def _inspect_model(self, model_name: str) -> dict[str, Any]:
+        """Inspect a model via ``/api/show`` and return structured metadata.
 
-        Uses model_info keys as the source of truth — the same data that the
-        Ollama desktop app uses to determine multimodal support.
-        Thinking support is detected from the Go template (``{{- if .Think }}``).
+        Returns a dict with:
+        - capabilities: dict[str, bool] — tools, vision, thinking
+        - context_length: int | None
+        - parameter_count: str | None — e.g. "14B", "7B"
+        - family: str | None — e.g. "qwen3", "llama"
         """
-        caps = {"tools": False, "vision": False, "thinking": False}
+        meta: dict[str, Any] = {
+            "capabilities": {"tools": False, "vision": False, "thinking": False},
+            "context_length": None,
+            "parameter_count": None,
+            "family": None,
+        }
         try:
             resp = await self._get_http().post(
                 "/api/show", json={"name": model_name}
@@ -131,19 +138,30 @@ class OllamaBackend:
 
             template = data.get("template", "")
             if ".Tools" in template:
-                caps["tools"] = True
+                meta["capabilities"]["tools"] = True
             if ".Think" in template:
-                caps["thinking"] = True
+                meta["capabilities"]["thinking"] = True
 
             model_info = data.get("model_info") or {}
             info_keys_lower = " ".join(model_info.keys()).lower()
             if "vision" in info_keys_lower or "clip" in info_keys_lower or "projector" in info_keys_lower:
-                caps["vision"] = True
+                meta["capabilities"]["vision"] = True
 
-        except Exception:
-            pass
+            details = data.get("details") or {}
+            meta["family"] = details.get("family")
+            param_size = details.get("parameter_size")
+            if param_size:
+                meta["parameter_count"] = param_size
 
-        return caps
+            for key, val in model_info.items():
+                if "context_length" in key.lower() and isinstance(val, (int, float)):
+                    meta["context_length"] = int(val)
+                    break
+
+        except Exception as exc:
+            logger.debug("Failed to inspect model %s: %s", model_name, exc)
+
+        return meta
 
     async def list_models(self) -> list[ModelInfo]:
         try:
@@ -163,7 +181,9 @@ class OllamaBackend:
                 gb = size_bytes / (1024**3)
                 size_str = f"{gb:.1f}GB" if gb >= 1 else f"{size_bytes / (1024**2):.0f}MB"
 
-            detected = await self._check_capabilities(m["name"])
+            meta = await self._inspect_model(m["name"])
+            detected = meta["capabilities"]
+
             caps = ["chat"]
             if detected["tools"]:
                 caps.append("tools")
@@ -179,6 +199,9 @@ class OllamaBackend:
                     backend="ollama",
                     size=size_str,
                     quantization=details.get("quantization_level"),
+                    context_length=meta["context_length"],
+                    parameter_count=meta["parameter_count"],
+                    family=meta["family"],
                     capabilities=caps,
                 )
             )

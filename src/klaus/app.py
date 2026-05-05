@@ -72,6 +72,10 @@ async def lifespan(app: FastAPI):
     logger.info("Discovering model capabilities...")
     await state.model_registry.refresh_capabilities()
 
+    for bname, model_caps in state.model_registry._capabilities_cache.items():
+        for mname, caps in model_caps.items():
+            logger.info("  %-30s [%s] %s", mname, bname, ", ".join(caps))
+
     if settings.task_routing:
         state.task_router.load_rules(settings.task_routing)
         logger.info("Loaded %d task routing rules from config", len(settings.task_routing))
