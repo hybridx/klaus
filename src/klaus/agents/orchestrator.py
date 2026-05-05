@@ -152,7 +152,7 @@ class Orchestrator:
         results = index.search(
             f"plan correction {user_input[:100]}",
             tags=["plan-correction"],
-            limit=5,
+            max_results=5,
         )
         if not results:
             return ""
