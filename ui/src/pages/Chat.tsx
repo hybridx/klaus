@@ -63,7 +63,7 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [models, setModels] = useState<ModelOption[]>([]);
-  const [selectedModel, setSelectedModel] = useState<ModelOption | null>(null);
+  const [selectedModel, setSelectedModel] = useState<ModelOption | null>({ name: 'Auto', backend: '' });
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [images, setImages] = useState<ImageAttachment[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -104,9 +104,6 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
           }
         }
         setModels(opts);
-        if (opts.length > 0 && !selectedModel) {
-          setSelectedModel(opts[0]);
-        }
       })
       .catch(() => {});
   }, []);
@@ -245,7 +242,7 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
     if (imageData.length > 0) {
       payload.images = imageData;
     }
-    if (selectedModel) {
+    if (selectedModel && selectedModel.backend) {
       payload.model = selectedModel.name;
       payload.backend = selectedModel.backend;
     }
@@ -302,7 +299,10 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
             </div>
             {selectedModel && (
               <div className="text-[12px] text-stone-400 dark:text-stone-500">
-                Using <span className="font-medium">{selectedModel.name}</span> on {selectedModel.backend}
+                {selectedModel.backend
+                  ? <>Using <span className="font-medium">{selectedModel.name}</span> on {selectedModel.backend}</>
+                  : <>Using <span className="font-medium">Auto</span> routing</>
+                }
               </div>
             )}
           </div>
@@ -496,6 +496,20 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
                     <div className="absolute bottom-full left-0 mb-1 w-56
                                     bg-surface border border-border rounded-xl shadow-lg
                                     py-1 max-h-60 overflow-y-auto z-50">
+                      <button
+                        onClick={() => { setSelectedModel({ name: 'Auto', backend: '' }); setShowModelPicker(false); }}
+                        className={clsx(
+                          'w-full text-left px-3 py-1.5 text-[12px] transition-colors',
+                          'hover:bg-stone-100 dark:hover:bg-stone-800',
+                          !selectedModel?.backend
+                            ? 'text-stone-900 dark:text-stone-100 font-medium'
+                            : 'text-stone-600 dark:text-stone-400',
+                        )}
+                      >
+                        <div>Auto</div>
+                        <div className="text-[10px] text-stone-400 dark:text-stone-500">use routing rules</div>
+                      </button>
+                      <div className="h-px bg-border mx-2 my-1" />
                       {models.map((m, idx) => (
                         <button
                           key={idx}

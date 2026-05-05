@@ -53,6 +53,8 @@ async def websocket_endpoint(ws: WebSocket):
 
 async def _handle_chat(ws: WebSocket, msg: dict, state) -> None:
     """Handle a chat message using the LangGraph agent with streaming."""
+    from klaus.routing.router import classify_task
+
     messages_raw = msg.get("messages", [])
     images_raw = msg.get("images", [])
     task = msg.get("task")
@@ -60,6 +62,10 @@ async def _handle_chat(ws: WebSocket, msg: dict, state) -> None:
     backend = msg.get("backend")
     temperature = msg.get("temperature", 0.7)
     chat_id = msg.get("id", "")
+
+    if not task:
+        user_text = " ".join(m.get("content", "") for m in messages_raw if m.get("role") == "user")
+        task = classify_task(user_text)
 
     decision = state.task_router.resolve(
         task=task,

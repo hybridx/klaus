@@ -11,6 +11,7 @@ import {
   ChevronLeft,
   PanelLeftOpen,
   PanelLeftClose,
+  BookOpen,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -92,6 +93,18 @@ export default function Layout({ page, setPage, connected, theme, sidebarOpen, o
                   </button>
                 );
               })}
+
+              <a
+                href="https://hybridx.github.io/klaus/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[11px] text-stone-400 dark:text-stone-500
+                           hover:text-stone-600 dark:hover:text-stone-300 transition-colors
+                           flex items-center gap-1"
+              >
+                <BookOpen size={12} />
+                Docs
+              </a>
 
               <div className="w-px h-3 bg-border" />
 

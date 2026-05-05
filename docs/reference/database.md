@@ -129,9 +129,9 @@ podman exec klaus-pg pg_dump -U klaus klaus > backup.sql
 podman exec -i klaus-pg psql -U klaus klaus < backup.sql
 ```
 
-## Docker Compose
+## Podman Compose
 
-The `docker-compose.yml` includes PostgreSQL with a health check:
+The `docker-compose.yml` (used via `podman-compose`) includes PostgreSQL with a health check:
 
 ```yaml
 services:

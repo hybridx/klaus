@@ -16,6 +16,50 @@ from klaus.config.settings import TaskRoutingRule
 
 logger = logging.getLogger(__name__)
 
+_TASK_KEYWORDS: dict[str, list[str]] = {
+    "coding": [
+        "code", "function", "class", "bug", "debug", "refactor", "implement",
+        "compile", "syntax", "algorithm", "python", "javascript", "typescript",
+        "rust", "java", "html", "css", "sql", "api", "endpoint", "regex",
+        "git", "docker", "deploy", "test", "unit test", "script", "import",
+        "variable", "loop", "array", "list", "dict", "struct", "type",
+        "error", "exception", "stack trace", "traceback", "program",
+    ],
+    "reasoning": [
+        "think", "reason", "logic", "proof", "deduce", "infer", "conclude",
+        "analyze", "evaluate", "compare", "contrast", "argue", "debate",
+        "philosophy", "math", "equation", "solve", "puzzle", "riddle",
+        "paradox", "hypothesis", "theorem",
+    ],
+    "creative": [
+        "write", "story", "poem", "creative", "imagine", "fiction",
+        "character", "dialogue", "narrative", "plot", "essay", "blog",
+        "song", "lyrics", "screenplay", "brainstorm",
+    ],
+    "analysis": [
+        "analyze", "data", "statistics", "chart", "graph", "trend",
+        "insight", "report", "metric", "measure", "benchmark", "performance",
+        "research", "study", "findings", "correlation",
+    ],
+    "summarization": [
+        "summarize", "summary", "tldr", "brief", "condense", "recap",
+        "overview", "digest", "key points", "highlights",
+    ],
+}
+
+
+def classify_task(text: str) -> str | None:
+    """Classify user text into a task type using keyword matching."""
+    lower = text.lower()
+    scores: dict[str, int] = {}
+    for task, keywords in _TASK_KEYWORDS.items():
+        score = sum(1 for kw in keywords if kw in lower)
+        if score > 0:
+            scores[task] = score
+    if not scores:
+        return None
+    return max(scores, key=scores.get)  # type: ignore[arg-type]
+
 
 @dataclass
 class RoutingDecision:

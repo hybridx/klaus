@@ -130,7 +130,7 @@ klaus/
 │   └── package.json
 ├── Containerfile               # App container image
 ├── Containerfile.postgres      # PostgreSQL + pgvector image
-├── docker-compose.yml          # Full stack compose
+├── docker-compose.yml          # Full stack compose (use with podman-compose)
 └── pyproject.toml              # Python dependencies
 ```
 

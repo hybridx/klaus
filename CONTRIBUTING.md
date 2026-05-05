@@ -27,7 +27,7 @@ uv run klaus-dev
 
 `uv` creates the Python virtual environment and installs all dependencies automatically on first run.
 
-PostgreSQL with pgvector is required. The default connection URL (`postgresql://klaus:klaus@localhost:5432/klaus`) works out of the box with the provided `docker-compose.yml`. Override it via `DATABASE_URL` in `.env` or `database.url` in `config/klaus.yaml`.
+PostgreSQL with pgvector is required. The default connection URL (`postgresql://klaus:klaus@localhost:5432/klaus`) works out of the box with the provided `docker-compose.yml` (run via `podman-compose`). Override it via `DATABASE_URL` in `.env` or `database.url` in `config/klaus.yaml`.
 
 ## Development
 

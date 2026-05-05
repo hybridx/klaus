@@ -1,3 +1,5 @@
+# Run with: podman-compose up -d
+# File is named docker-compose.yml for compatibility but always use podman.
 services:
   klaus:
     build:
@@ -8,7 +10,7 @@ services:
     volumes:
       - ./config:/app/config
     environment:
-      - klaus_LOG_LEVEL=info
+      - KLAUS_LOG_LEVEL=info
       - DATABASE_URL=postgresql://klaus:klaus@postgres:5432/klaus
     depends_on:
       postgres:
@@ -24,6 +26,10 @@ services:
     image: klaus-postgres:latest
     ports:
       - "5432:5432"
+    environment:
+      POSTGRES_DB: klaus
+      POSTGRES_USER: klaus
+      POSTGRES_PASSWORD: klaus
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
