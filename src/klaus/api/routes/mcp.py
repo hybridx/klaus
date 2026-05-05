@@ -72,9 +72,19 @@ async def connect_server(name: str):
     state = get_state()
     try:
         await state.mcp_manager.connect(name)
-        return {"status": "connected", "name": name}
+        entry = state.mcp_manager._get(name)
+        return {
+            "status": "connected",
+            "name": name,
+            "tools": [{"name": t.name, "description": t.description} for t in entry.tools],
+        }
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Server command not found: {exc}. Is the MCP server installed?",
+        ) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

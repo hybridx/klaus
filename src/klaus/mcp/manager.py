@@ -95,52 +95,82 @@ class MCPServerManager:
                 env=entry.env if entry.env else None,
             )
 
-            read_stream, write_stream = await self._start_server(server_params)
-            entry._read = read_stream
-            entry._write = write_stream
+            # The MCP SDK's stdio_client is an async context manager that must
+            # stay open for the lifetime of the connection. We run it in a
+            # background task so __aenter__ and __aexit__ happen in the same task.
+            ready: asyncio.Future[None] = asyncio.get_event_loop().create_future()
 
-            session = ClientSession(read_stream, write_stream)
-            await asyncio.wait_for(session.initialize(), timeout=self.CONNECTION_TIMEOUT)
-            entry._session = session
-            entry.status = MCPServerStatus.CONNECTED
+            async def _server_lifecycle() -> None:
+                try:
+                    async with stdio_client(server_params) as (read_stream, write_stream):
+                        entry._read = read_stream
+                        entry._write = write_stream
 
-            tools_result = await asyncio.wait_for(
-                session.list_tools(), timeout=self.CONNECTION_TIMEOUT,
-            )
-            entry.tools = [
-                MCPToolInfo(
-                    name=t.name,
-                    description=t.description,
-                    input_schema=t.inputSchema if hasattr(t, "inputSchema") else None,
-                )
-                for t in tools_result.tools
-            ]
+                        session = ClientSession(read_stream, write_stream)
+                        await asyncio.wait_for(
+                            session.initialize(), timeout=self.CONNECTION_TIMEOUT,
+                        )
+                        entry._session = session
+                        entry.status = MCPServerStatus.CONNECTED
 
-            logger.info(
-                "Connected to MCP server '%s' — %d tools available",
-                name,
-                len(entry.tools),
-            )
+                        tools_result = await asyncio.wait_for(
+                            session.list_tools(), timeout=self.CONNECTION_TIMEOUT,
+                        )
+                        entry.tools = [
+                            MCPToolInfo(
+                                name=t.name,
+                                description=t.description,
+                                input_schema=t.inputSchema if hasattr(t, "inputSchema") else None,
+                            )
+                            for t in tools_result.tools
+                        ]
+
+                        logger.info(
+                            "Connected to MCP server '%s' — %d tools available",
+                            name,
+                            len(entry.tools),
+                        )
+
+                        if not ready.done():
+                            ready.set_result(None)
+
+                        # Keep the context manager alive until the task is cancelled
+                        await asyncio.Future()
+
+                except asyncio.CancelledError:
+                    logger.info("MCP server '%s' lifecycle task cancelled", name)
+                except BaseException as exc:
+                    if not ready.done():
+                        ready.set_exception(exc)
+                    raise
+                finally:
+                    entry._session = None
+                    entry.status = MCPServerStatus.DISCONNECTED
+
+            task = asyncio.create_task(_server_lifecycle(), name=f"mcp-{name}")
+            entry._task = task
+
+            await asyncio.wait_for(asyncio.shield(ready), timeout=self.CONNECTION_TIMEOUT)
+
         except BaseException as exc:
             entry.status = MCPServerStatus.ERROR
             entry.error = str(exc)
+            if entry._task and not entry._task.done():
+                entry._task.cancel()
+                entry._task = None
             logger.error("Failed to connect to MCP server '%s': %s", name, exc)
             raise
 
-    async def _start_server(self, params: StdioServerParameters) -> tuple:
-        """Start an MCP stdio server and return (read_stream, write_stream)."""
-        cm = stdio_client(params)
-        streams = await cm.__aenter__()
-        return streams
-
     async def disconnect(self, name: str) -> None:
         entry = self._get(name)
-        if entry._session:
+        if entry._task and not entry._task.done():
+            entry._task.cancel()
             try:
-                # Close session resources
-                entry._session = None
-            except Exception as exc:
-                logger.warning("Error disconnecting MCP server '%s': %s", name, exc)
+                await entry._task
+            except (asyncio.CancelledError, Exception):
+                pass
+            entry._task = None
+        entry._session = None
         entry.status = MCPServerStatus.DISCONNECTED
         entry.tools = []
         logger.info("Disconnected MCP server: %s", name)
