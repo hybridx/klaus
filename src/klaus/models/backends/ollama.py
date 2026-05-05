@@ -14,15 +14,6 @@ from klaus.models.base import ChatMessage, GenerateRequest, GenerateResponse, Mo
 
 logger = logging.getLogger(__name__)
 
-_REASONING_PREFIXES = ("qwen3", "deepseek-r1", "deepseek-r1-distill")
-
-
-def _supports_reasoning(model_name: str) -> bool:
-    """Check if a model supports extended thinking / chain-of-thought."""
-    base = model_name.split(":")[0].lower()
-    return any(base.startswith(p) for p in _REASONING_PREFIXES)
-
-
 _ROLE_MAP = {
     "system": SystemMessage,
     "user": HumanMessage,
@@ -64,6 +55,7 @@ class OllamaBackend:
         self._default_model = default_model or "llama3.2"
         self._options = options or {}
         self._http: httpx.AsyncClient | None = None
+        self._thinking_models: set[str] = set()
 
     @property
     def backend_type(self) -> str:
@@ -74,12 +66,11 @@ class OllamaBackend:
     ) -> ChatOllama:
         """Return a configured ChatOllama instance.
 
-        Automatically enables `reasoning=True` for models that support
-        chain-of-thought (qwen3, deepseek-r1). LangChain stores the thinking
-        in `AIMessage.additional_kwargs['reasoning_content']`.
+        Automatically enables `reasoning=True` for models whose thinking
+        capability was verified by the Ollama API (via ``/api/show``).
         """
         effective_model = model or self._default_model
-        if _supports_reasoning(effective_model) and "reasoning" not in kwargs:
+        if effective_model in self._thinking_models and "reasoning" not in kwargs:
             kwargs["reasoning"] = True
         return ChatOllama(
             model=effective_model,
@@ -128,8 +119,9 @@ class OllamaBackend:
 
         Uses model_info keys as the source of truth — the same data that the
         Ollama desktop app uses to determine multimodal support.
+        Thinking support is detected from the Go template (``{{- if .Think }}``).
         """
-        caps = {"tools": False, "vision": False}
+        caps = {"tools": False, "vision": False, "thinking": False}
         try:
             resp = await self._get_http().post(
                 "/api/show", json={"name": model_name}
@@ -140,6 +132,8 @@ class OllamaBackend:
             template = data.get("template", "")
             if ".Tools" in template:
                 caps["tools"] = True
+            if ".Think" in template:
+                caps["thinking"] = True
 
             model_info = data.get("model_info") or {}
             info_keys_lower = " ".join(model_info.keys()).lower()
@@ -175,6 +169,9 @@ class OllamaBackend:
                 caps.append("tools")
             if detected["vision"]:
                 caps.append("vision")
+            if detected["thinking"]:
+                caps.append("thinking")
+                self._thinking_models.add(m["name"])
 
             models.append(
                 ModelInfo(

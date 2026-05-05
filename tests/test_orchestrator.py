@@ -1464,34 +1464,33 @@ class TestReactSense:
 
 
 class TestOllamaReasoning:
-    """Tests for the _supports_reasoning helper."""
+    """Tests for API-verified thinking capability detection."""
 
-    def test_qwen3_detected(self):
-        from klaus.models.backends.ollama import _supports_reasoning
-        assert _supports_reasoning("qwen3:14b")
-        assert _supports_reasoning("qwen3:latest")
-
-    def test_deepseek_r1_detected(self):
-        from klaus.models.backends.ollama import _supports_reasoning
-        assert _supports_reasoning("deepseek-r1:32b")
-        assert _supports_reasoning("deepseek-r1-distill:7b")
-
-    def test_non_reasoning_model(self):
-        from klaus.models.backends.ollama import _supports_reasoning
-        assert not _supports_reasoning("llama3.2:latest")
-        assert not _supports_reasoning("gemma4:latest")
-
-    def test_reasoning_kwarg_injected(self):
+    def test_reasoning_enabled_when_in_cache(self):
         from klaus.models.backends.ollama import OllamaBackend
         backend = OllamaBackend()
+        backend._thinking_models.add("qwen3:14b")
         model = backend.get_chat_model("qwen3:14b")
         assert getattr(model, "reasoning", False) is True
 
-    def test_reasoning_not_injected_for_normal_model(self):
+    def test_reasoning_not_enabled_when_not_in_cache(self):
+        from klaus.models.backends.ollama import OllamaBackend
+        backend = OllamaBackend()
+        model = backend.get_chat_model("qwen3:14b")
+        assert getattr(model, "reasoning", None) is not True
+
+    def test_reasoning_not_enabled_for_unknown_model(self):
         from klaus.models.backends.ollama import OllamaBackend
         backend = OllamaBackend()
         model = backend.get_chat_model("llama3.2:latest")
         assert getattr(model, "reasoning", None) is not True
+
+    def test_explicit_reasoning_false_overrides_cache(self):
+        from klaus.models.backends.ollama import OllamaBackend
+        backend = OllamaBackend()
+        backend._thinking_models.add("qwen3:14b")
+        model = backend.get_chat_model("qwen3:14b", reasoning=False)
+        assert getattr(model, "reasoning", True) is False
 
 
 class TestStepResult:
