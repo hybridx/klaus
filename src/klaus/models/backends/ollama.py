@@ -14,6 +14,15 @@ from klaus.models.base import ChatMessage, GenerateRequest, GenerateResponse, Mo
 
 logger = logging.getLogger(__name__)
 
+_REASONING_PREFIXES = ("qwen3", "deepseek-r1", "deepseek-r1-distill")
+
+
+def _supports_reasoning(model_name: str) -> bool:
+    """Check if a model supports extended thinking / chain-of-thought."""
+    base = model_name.split(":")[0].lower()
+    return any(base.startswith(p) for p in _REASONING_PREFIXES)
+
+
 _ROLE_MAP = {
     "system": SystemMessage,
     "user": HumanMessage,
@@ -65,10 +74,15 @@ class OllamaBackend:
     ) -> ChatOllama:
         """Return a configured ChatOllama instance.
 
-        This is the LangChain chat model that LangGraph agents will use directly.
+        Automatically enables `reasoning=True` for models that support
+        chain-of-thought (qwen3, deepseek-r1). LangChain stores the thinking
+        in `AIMessage.additional_kwargs['reasoning_content']`.
         """
+        effective_model = model or self._default_model
+        if _supports_reasoning(effective_model) and "reasoning" not in kwargs:
+            kwargs["reasoning"] = True
         return ChatOllama(
-            model=model or self._default_model,
+            model=effective_model,
             base_url=self._base_url,
             temperature=temperature,
             **kwargs,

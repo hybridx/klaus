@@ -19,15 +19,24 @@ class SubTask:
     task_type: str | None
 
 
+_ACTION_VERBS = (
+    r"(?:create|write|make|build|generate|tell|show|describe|explain|find|"
+    r"analyze|summarize|translate|draw|code|implement|debug|fix|run|"
+    r"give|list|compare|check|do|send|open|search|identify)"
+)
+
 _CONJUNCTION_PATTERN = re.compile(
     r"""
-    (?:                          # non-capturing group
-      \.\s+(?:then|also|next)\s  # period then conjunction: "...code. Then write..."
-    | ,\s*(?:then|and\s+also)\s  # comma then conjunction: "...code, then write..."
-    | \s+then\s+                 # bare "then" surrounded by spaces
-    | \s+and\s+also\s+           # "and also"
-    | \s+after\s+that[,]?\s+     # "after that"
-    | \s*;\s+                    # semicolons
+    (?:                            # non-capturing group
+      \.\s+(?:then|also|next)\s    # period then conjunction: "...code. Then write..."
+    | ,\s*(?:then|and\s+also)\s    # comma then conjunction: "...code, then write..."
+    | \s+then\s+                   # bare "then" surrounded by spaces
+    | \s+and\s+also\s+             # "and also"
+    | \s+after\s+that[,]?\s+       # "after that"
+    | \s*;\s+                      # semicolons
+    | \s+and\s+(?="""
+    + _ACTION_VERBS
+    + r""")                        # "and" + action verb: "...code and write..."
     )
     """,
     re.IGNORECASE | re.VERBOSE,

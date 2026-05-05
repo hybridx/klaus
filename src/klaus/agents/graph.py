@@ -244,6 +244,10 @@ class klausAgent:  # noqa: N801
                     "content": result_text[:1000],
                 }
             elif isinstance(msg, AIMessage):
+                reasoning = msg.additional_kwargs.get("reasoning_content", "")
+                if reasoning:
+                    yield {"type": "thinking", "content": reasoning}
+
                 if msg.tool_calls:
                     tool_call_count += len(msg.tool_calls)
                     for tc in msg.tool_calls:

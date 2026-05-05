@@ -264,7 +264,7 @@ klaus/
 │   ├── code-expert.md
 │   ├── creative-writer.md
 │   └── analyst.md
-├── tests/                       # Test suite (197 tests)
+├── tests/                       # Test suite (214 tests)
 ├── ui/                          # Frontend (React + Vite + Tailwind + React Flow)
 │   ├── package.json
 │   ├── vite.config.ts

@@ -62,24 +62,38 @@ task_routing:
     preferred_backend: ollama
     preferred_model: granite-code:8b
     fallback_backends: [ollama]
+    description: Programming and software development tasks
+    keywords: [code, function, class, bug, debug, refactor, implement, python, javascript, rust, html, css, sql, api, regex, git, deploy, test, script, error, exception, program]
   reasoning:
     preferred_backend: ollama
     preferred_model: deepseek-r1:32b
+    description: Logical reasoning, math, and problem-solving
+    keywords: [think, reason, logic, proof, deduce, math, equation, solve, puzzle, hypothesis, theorem, philosophy]
   chat:
     preferred_backend: ollama
     preferred_model: llama3.2
+    description: General conversation and Q&A
+    keywords: [hello, hi, hey, thanks, help, question, explain, tell me, what is, how do]
   analysis:
     preferred_backend: ollama
     preferred_model: qwen3:14b
+    description: Data analysis, research, and reporting
+    keywords: [analyze, data, statistics, chart, graph, trend, insight, report, metric, benchmark, research, findings]
   creative:
     preferred_backend: ollama
     preferred_model: dolphin-llama3
+    description: Creative writing and content generation
+    keywords: [write, story, poem, creative, imagine, fiction, essay, blog, song, lyrics, brainstorm, narrative]
   summarization:
     preferred_backend: ollama
     preferred_model: mistral
+    description: Text summarization and condensation
+    keywords: [summarize, summary, tldr, brief, condense, recap, overview, key points, highlights]
   image:
     preferred_backend: ollama
     preferred_model: gemma4:latest
+    description: Image analysis and visual understanding
+    keywords: [image, photo, picture, visual, describe, identify, what is this, screenshot, diagram]
 
 # MCP servers — three ways to register:
 #

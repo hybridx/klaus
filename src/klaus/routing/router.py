@@ -48,17 +48,59 @@ _TASK_KEYWORDS: dict[str, list[str]] = {
 }
 
 
-def classify_task(text: str) -> str | None:
-    """Classify user text into a task type using keyword matching."""
+def classify_task(
+    text: str,
+    extra_keywords: dict[str, list[str]] | None = None,
+) -> str | None:
+    """Classify user text into a task type using keyword matching.
+
+    Merges hardcoded _TASK_KEYWORDS with any extra keywords (e.g. from
+    user-defined routing rules) so custom intents participate in scoring.
+    """
     lower = text.lower()
+    merged: dict[str, list[str]] = dict(_TASK_KEYWORDS)
+    if extra_keywords:
+        for task, kws in extra_keywords.items():
+            if task in merged:
+                existing = set(merged[task])
+                merged[task] = list(existing | set(kws))
+            else:
+                merged[task] = list(kws)
+
     scores: dict[str, int] = {}
-    for task, keywords in _TASK_KEYWORDS.items():
+    for task, keywords in merged.items():
         score = sum(1 for kw in keywords if kw in lower)
         if score > 0:
             scores[task] = score
     if not scores:
         return None
     return max(scores, key=scores.get)  # type: ignore[arg-type]
+
+
+def check_keyword_overlap(
+    existing_rules: dict[str, list[str]],
+    new_task: str,
+    new_keywords: list[str],
+    threshold: float = 0.5,
+) -> str | None:
+    """Check if new_keywords overlap >threshold with any existing intent.
+
+    Returns the conflicting task name, or None if no conflict.
+    """
+    if not new_keywords:
+        return None
+    new_set = set(kw.lower() for kw in new_keywords)
+    for task, kws in existing_rules.items():
+        if task == new_task:
+            continue
+        existing_set = set(kw.lower() for kw in kws)
+        if not existing_set:
+            continue
+        overlap = len(new_set & existing_set)
+        smaller = min(len(new_set), len(existing_set))
+        if smaller > 0 and overlap / smaller > threshold:
+            return task
+    return None
 
 
 @dataclass
@@ -104,6 +146,26 @@ class TaskRouter:
 
     def load_rules(self, rules: dict[str, TaskRoutingRule]) -> None:
         self._rules.update(rules)
+
+    def classify(self, text: str) -> str | None:
+        """Classify text using merged hardcoded + rule-defined keywords."""
+        extra = {
+            task: rule.keywords
+            for task, rule in self._rules.items()
+            if rule.keywords
+        }
+        return classify_task(text, extra_keywords=extra or None)
+
+    def get_keyword_map(self) -> dict[str, list[str]]:
+        """All keywords per task: hardcoded defaults merged with rule keywords."""
+        merged: dict[str, list[str]] = dict(_TASK_KEYWORDS)
+        for task, rule in self._rules.items():
+            if rule.keywords:
+                if task in merged:
+                    merged[task] = list(set(merged[task]) | set(rule.keywords))
+                else:
+                    merged[task] = list(rule.keywords)
+        return merged
 
     def update_health(self, backend: str, healthy: bool) -> None:
         if backend in self._backends:

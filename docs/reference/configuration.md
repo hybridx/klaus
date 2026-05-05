@@ -48,18 +48,28 @@ task_routing:
   coding:
     preferred_backend: ollama
     preferred_model: granite-code:8b
+    description: Programming and software development tasks
+    keywords: [code, function, class, bug, debug, python, javascript, api, test]
   creative:
     preferred_backend: gemini
     preferred_model: gemini-2.0-flash
+    description: Creative writing and content generation
+    keywords: [write, story, poem, creative, fiction, essay, brainstorm]
   analysis:
     preferred_backend: huggingface
     preferred_model: Qwen/Qwen3-235B-A22B
+    description: Data analysis, research, and reporting
+    keywords: [analyze, data, statistics, chart, trend, research, report]
   chat:
     preferred_backend: ollama
     preferred_model: llama3.2
+    description: General conversation and Q&A
+    keywords: [hello, hi, help, question, explain, tell me, what is]
   image:                             # Used when images are attached
     preferred_backend: ollama
     preferred_model: gemma4:latest
+    description: Image analysis and visual understanding
+    keywords: [image, photo, picture, visual, describe, screenshot]
 
 # Embedding model — fully local via Ollama (used for memory semantic search)
 embedding:

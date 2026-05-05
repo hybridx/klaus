@@ -41,6 +41,11 @@ interface PlanStepInfo {
   model: string;
   status: 'pending' | 'running' | 'done';
   result_preview?: string;
+  thinking?: string;
+  phase?: 'sense' | 'act' | 'reflect';
+  reflectPassed?: boolean;
+  reflectReason?: string;
+  retrying?: boolean;
 }
 
 interface ChatMsg {
@@ -51,6 +56,7 @@ interface ChatMsg {
   routing?: RoutingInfo;
   toolCall?: ToolCallInfo;
   subtask?: SubtaskInfo;
+  thinking?: string;
   planSteps?: PlanStepInfo[];
   planStatus?: 'awaiting' | 'approved' | 'rejected' | 'executing';
   planAgents?: Array<{ name: string; description: string; capabilities: string[] }>;
@@ -402,23 +408,84 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
         scrollBottom();
       } else if (msg.type === 'plan.step_done' && msg.data?.chat_id) {
         const idx = msg.data.index as number;
-        const preview = (msg.data.result_preview as string) || '';
+        const result = (msg.data.result as string) || (msg.data.result_preview as string) || '';
+        const model = (msg.data.model as string) || '';
+        const backend = (msg.data.backend as string) || '';
+        const taskType = (msg.data.task_type as string) || '';
         setMessages((prev) => {
           const copy = [...prev];
           const planMsg = copy.find((m) => m.role === 'plan');
           if (planMsg?.planSteps) {
             planMsg.planSteps = planMsg.planSteps.map((s) =>
-              s.index === idx ? { ...s, status: 'done' as const, result_preview: preview } : s,
+              s.index === idx ? {
+                ...s,
+                status: 'done' as const,
+                result_preview: result,
+                model: model || s.model,
+                backend: backend || s.backend,
+                task_type: taskType || s.task_type,
+              } : s,
             );
           }
           return copy;
         });
         scrollBottom();
-      } else if (msg.type === 'plan.consolidated' && msg.data?.chat_id) {
-        const assistant: ChatMsg = { role: 'assistant', content: '', done: false };
-        currentRef.current = assistant;
-        setMessages((prev) => [...prev, assistant]);
-        scrollBottom();
+      } else if (msg.type === 'thinking' && msg.data?.chat_id) {
+        const thinkContent = msg.data.content as string;
+        setMessages((prev) => {
+          const copy = [...prev];
+          const last = copy.findLast((m) => m.role === 'assistant');
+          if (last) {
+            last.thinking = (last.thinking || '') + thinkContent;
+          }
+          return copy;
+        });
+      } else if (msg.type === 'plan.phase' && msg.data?.chat_id) {
+        const idx = msg.data.index as number;
+        const phase = msg.data.phase as PlanStepInfo['phase'];
+        setMessages((prev) => {
+          const copy = [...prev];
+          const planMsg = copy.find((m) => m.role === 'plan');
+          if (planMsg?.planSteps) {
+            planMsg.planSteps = planMsg.planSteps.map((s) =>
+              s.index === idx ? { ...s, phase } : s,
+            );
+          }
+          return copy;
+        });
+      } else if (msg.type === 'plan.step_thinking' && msg.data?.chat_id) {
+        const idx = msg.data.index as number;
+        const content = msg.data.content as string;
+        setMessages((prev) => {
+          const copy = [...prev];
+          const planMsg = copy.find((m) => m.role === 'plan');
+          if (planMsg?.planSteps) {
+            planMsg.planSteps = planMsg.planSteps.map((s) =>
+              s.index === idx ? { ...s, thinking: (s.thinking || '') + content } : s,
+            );
+          }
+          return copy;
+        });
+      } else if (msg.type === 'plan.step_reflect' && msg.data?.chat_id) {
+        const idx = msg.data.index as number;
+        const reflectPassed = msg.data.passed as boolean;
+        const reflectReason = msg.data.reason as string;
+        const retrying = msg.data.retrying as boolean;
+        setMessages((prev) => {
+          const copy = [...prev];
+          const planMsg = copy.find((m) => m.role === 'plan');
+          if (planMsg?.planSteps) {
+            planMsg.planSteps = planMsg.planSteps.map((s) =>
+              s.index === idx ? {
+                ...s,
+                reflectPassed,
+                reflectReason,
+                retrying,
+              } : s,
+            );
+          }
+          return copy;
+        });
       }
     });
   }, [ws, scrollBottom]);
@@ -554,122 +621,219 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
 
               if (m.role === 'plan' && m.planSteps) {
                 const isAwaiting = m.planStatus === 'awaiting';
+                const allDone = m.planSteps.every((s) => s.status === 'done');
                 return (
-                  <div key={i} className="max-w-[90%] mb-2">
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <div className="text-[10px] font-semibold uppercase tracking-wider
-                                      text-stone-400 dark:text-stone-500">
-                        Execution Plan
+                  <div key={i} className="w-full mb-2">
+                    {/* Plan header */}
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="text-[11px] font-semibold uppercase tracking-wider
+                                      text-stone-500 dark:text-stone-400">
+                        Plan
                       </div>
                       {isAwaiting && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 font-medium">
-                          Awaiting approval
+                        <span className="text-[9px] px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 font-semibold animate-pulse">
+                          Waiting for your approval
                         </span>
                       )}
-                      {m.planStatus === 'executing' && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium flex items-center gap-1">
-                          <Loader2 size={8} className="animate-spin" /> Executing
+                      {m.planStatus === 'executing' && !allDone && (
+                        <span className="text-[9px] px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium flex items-center gap-1">
+                          <Loader2 size={8} className="animate-spin" /> Running
+                        </span>
+                      )}
+                      {allDone && (
+                        <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 font-medium">
+                          Complete
                         </span>
                       )}
                       {m.planStatus === 'rejected' && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-medium">
+                        <span className="text-[9px] px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-medium">
                           Rejected
                         </span>
                       )}
                     </div>
-                    <div className="border border-border rounded-lg bg-surface overflow-hidden divide-y divide-border">
+
+                    {/* Approval controls — prominent when awaiting */}
+                    {isAwaiting && (
+                      <div className="mb-3 p-3 rounded-lg border-2 border-amber-300 dark:border-amber-700
+                                      bg-amber-50 dark:bg-amber-900/20">
+                        <p className="text-[11px] text-amber-700 dark:text-amber-300 mb-2">
+                          Review the plan below. Each step runs on a different model. Approve to proceed, or reject/edit.
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => postPlanAction(sessionId, 'approve').catch(console.error)}
+                            className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-[12px] font-semibold
+                                       bg-emerald-600 hover:bg-emerald-700 text-white transition-colors shadow-sm"
+                          >
+                            <Check size={14} /> Approve & Run
+                          </button>
+                          <button
+                            onClick={() => {
+                              const reason = prompt('Why reject this plan?') || '';
+                              postPlanAction(sessionId, 'reject', { reason }).catch(console.error);
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-medium
+                                       bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300
+                                       hover:bg-red-100 dark:hover:bg-red-900/30
+                                       hover:text-red-700 dark:hover:text-red-400 transition-colors"
+                          >
+                            <XCircle size={12} /> Reject
+                          </button>
+                          <button
+                            onClick={() => {
+                              const raw = prompt(
+                                'Edit plan (JSON array of edits):\n'
+                                + 'e.g. [{"index": 0, "description": "new desc"}, {"index": 2, "remove": true}]'
+                              );
+                              if (!raw) return;
+                              try {
+                                const edits = JSON.parse(raw);
+                                const reason = prompt('Why this change?') || '';
+                                postPlanAction(sessionId, 'edit', { edits, reason }).catch(console.error);
+                              } catch {
+                                alert('Invalid JSON');
+                              }
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-medium
+                                       bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300
+                                       hover:bg-stone-300 dark:hover:bg-stone-600 transition-colors"
+                          >
+                            <Pencil size={12} /> Edit
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Steps as TODO list */}
+                    <div className="flex flex-col gap-3">
                       {m.planSteps.map((step) => (
-                        <div key={step.index} className="flex items-start gap-2 px-3 py-2">
-                          <div className="mt-0.5 shrink-0">
-                            {step.status === 'done' && (
-                              <span className="text-[11px] text-emerald-500">&#10003;</span>
-                            )}
-                            {step.status === 'running' && (
-                              <Loader2 size={11} className="animate-spin text-amber-500" />
-                            )}
-                            {step.status === 'pending' && (
-                              <span className="inline-block w-2.5 h-2.5 rounded-full border border-stone-300 dark:border-stone-600" />
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className={clsx(
-                              'text-[12px]',
-                              step.status === 'done'
-                                ? 'text-stone-500 dark:text-stone-400'
-                                : step.status === 'running'
-                                  ? 'text-stone-800 dark:text-stone-200 font-medium'
-                                  : 'text-stone-400 dark:text-stone-600',
-                            )}>
-                              {step.description}
+                        <div key={step.index} className={clsx(
+                          'border rounded-lg overflow-hidden transition-colors',
+                          step.status === 'running'
+                            ? 'border-blue-300 dark:border-blue-700 bg-blue-50/50 dark:bg-blue-900/10'
+                            : step.status === 'done'
+                              ? 'border-emerald-200 dark:border-emerald-800 bg-surface'
+                              : 'border-border bg-surface',
+                        )}>
+                          {/* Step header */}
+                          <div className="flex items-center gap-2.5 px-3 py-2.5">
+                            <div className="shrink-0">
+                              {step.status === 'done' && (
+                                <div className="w-5 h-5 rounded-md bg-emerald-500 flex items-center justify-center">
+                                  <Check size={12} className="text-white" />
+                                </div>
+                              )}
+                              {step.status === 'running' && (
+                                <div className="w-5 h-5 rounded-md bg-blue-500 flex items-center justify-center">
+                                  <Loader2 size={12} className="animate-spin text-white" />
+                                </div>
+                              )}
+                              {step.status === 'pending' && (
+                                <div className="w-5 h-5 rounded-md border-2 border-stone-300 dark:border-stone-600" />
+                              )}
                             </div>
-                            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                              <span className="text-[9px] px-1.5 py-0.5 rounded-full
-                                               bg-stone-100 dark:bg-stone-800
-                                               text-stone-500 dark:text-stone-400 uppercase font-semibold">
+                            <div className="flex-1 min-w-0">
+                              <div className={clsx(
+                                'text-[12px] leading-tight',
+                                step.status === 'done'
+                                  ? 'text-stone-600 dark:text-stone-300'
+                                  : step.status === 'running'
+                                    ? 'text-stone-800 dark:text-stone-100 font-semibold'
+                                    : 'text-stone-500 dark:text-stone-500',
+                              )}>
+                                {step.description}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span className={clsx(
+                                'text-[9px] px-1.5 py-0.5 rounded-md font-semibold uppercase',
+                                step.task_type === 'image'
+                                  ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
+                                  : step.task_type === 'coding'
+                                    ? 'bg-sky-100 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400'
+                                    : step.task_type === 'creative'
+                                      ? 'bg-pink-100 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400'
+                                      : 'bg-stone-100 dark:bg-stone-800 text-stone-500 dark:text-stone-400',
+                              )}>
                                 {step.task_type}
                               </span>
                               {step.agent && (
-                                <span className="text-[9px] px-1.5 py-0.5 rounded-full
+                                <span className="text-[9px] px-1.5 py-0.5 rounded-md
                                                  bg-violet-100 dark:bg-violet-900/30
                                                  text-violet-600 dark:text-violet-400 font-medium flex items-center gap-0.5">
                                   <Bot size={8} /> {step.agent}
                                 </span>
                               )}
-                              <span className="text-[9px] text-stone-400 dark:text-stone-500">
-                                {step.model} on {step.backend}
+                              <span className="text-[9px] font-medium text-stone-400 dark:text-stone-500">
+                                {step.model}
                               </span>
                             </div>
-                            {step.status === 'done' && step.result_preview && (
-                              <p className="text-[10px] text-stone-400 dark:text-stone-500 mt-1 line-clamp-2">
-                                {step.result_preview}
-                              </p>
-                            )}
                           </div>
+
+                          {/* Phase indicator */}
+                          {step.status === 'running' && step.phase && (
+                            <div className="border-t border-border px-3 py-1.5 flex items-center gap-1.5">
+                              <Loader2 size={10} className="animate-spin text-blue-400" />
+                              <span className="text-[10px] font-medium text-blue-400 uppercase tracking-wider">
+                                {step.phase === 'sense' && 'Gathering context...'}
+                                {step.phase === 'act' && 'Executing...'}
+                                {step.phase === 'reflect' && 'Validating output...'}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Reflect retry indicator */}
+                          {step.retrying && (
+                            <div className="border-t border-border px-3 py-1.5 flex items-center gap-1.5 bg-amber-50/50 dark:bg-amber-900/10">
+                              <Loader2 size={10} className="animate-spin text-amber-500" />
+                              <span className="text-[10px] text-amber-600 dark:text-amber-400">
+                                Output failed validation ({step.reflectReason}) &mdash; retrying...
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Thinking / reasoning (collapsible) */}
+                          {step.thinking && (
+                            <div className="border-t border-border px-3 py-2">
+                              <details className="group">
+                                <summary className="cursor-pointer text-[10px] text-stone-400 dark:text-stone-500 font-medium flex items-center gap-1">
+                                  <ChevronDown size={10} className="transition-transform group-open:rotate-180" />
+                                  Chain of Thought
+                                </summary>
+                                <pre className="whitespace-pre-wrap mt-1.5 text-[11px] leading-relaxed text-stone-400 dark:text-stone-500 italic max-h-48 overflow-y-auto">
+                                  {step.thinking}
+                                </pre>
+                              </details>
+                            </div>
+                          )}
+
+                          {/* Step result — shown inline when done */}
+                          {step.status === 'done' && step.result_preview && (
+                            <div className="border-t border-border px-3 py-2.5">
+                              <div className="flex items-center gap-1.5 mb-1.5">
+                                <Cpu size={9} className="text-stone-400" />
+                                <span className="text-[9px] font-medium text-stone-400 dark:text-stone-500">
+                                  {step.model} on {step.backend}
+                                </span>
+                                {step.reflectPassed !== undefined && (
+                                  <span className={clsx(
+                                    'text-[8px] px-1 py-0.5 rounded font-medium',
+                                    step.reflectPassed
+                                      ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400'
+                                      : 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400',
+                                  )}>
+                                    {step.reflectPassed ? 'PASS' : `FAIL: ${step.reflectReason}`}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="msg-text text-[13px] leading-[1.7]">
+                                <Markdown content={step.result_preview} />
+                              </div>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
-                    {/* Approval controls */}
-                    {isAwaiting && (
-                      <div className="mt-2 flex items-center gap-2">
-                        <button
-                          onClick={() => postPlanAction(sessionId, 'approve').catch(console.error)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium
-                                     bg-emerald-600 hover:bg-emerald-700 text-white transition-colors"
-                        >
-                          <Check size={12} /> Approve
-                        </button>
-                        <button
-                          onClick={() => {
-                            const reason = prompt('Why reject this plan?') || '';
-                            postPlanAction(sessionId, 'reject', { reason }).catch(console.error);
-                          }}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium
-                                     bg-red-600 hover:bg-red-700 text-white transition-colors"
-                        >
-                          <XCircle size={12} /> Reject
-                        </button>
-                        <button
-                          onClick={() => {
-                            const raw = prompt(
-                              'Edit plan (JSON array of edits):\n'
-                              + 'e.g. [{"index": 0, "description": "new description"}, {"index": 2, "remove": true}]'
-                            );
-                            if (!raw) return;
-                            try {
-                              const edits = JSON.parse(raw);
-                              const reason = prompt('Why this change?') || '';
-                              postPlanAction(sessionId, 'edit', { edits, reason }).catch(console.error);
-                            } catch {
-                              alert('Invalid JSON');
-                            }
-                          }}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium
-                                     bg-stone-600 hover:bg-stone-700 text-white transition-colors"
-                        >
-                          <Pencil size={12} /> Edit
-                        </button>
-                      </div>
-                    )}
                   </div>
                 );
               }
@@ -809,6 +973,21 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
                         );
                       })}
                     </div>
+                  )}
+                  {m.thinking && (
+                    <details className="mb-2 group">
+                      <summary className="cursor-pointer text-[10px] text-stone-400 dark:text-stone-500
+                                         font-medium flex items-center gap-1 select-none">
+                        <ChevronDown size={10} className="transition-transform group-open:rotate-180" />
+                        Chain of Thought
+                      </summary>
+                      <pre className="whitespace-pre-wrap mt-1.5 text-[11px] leading-relaxed
+                                      text-stone-400 dark:text-stone-500 italic
+                                      max-h-48 overflow-y-auto border-l-2 border-stone-200
+                                      dark:border-stone-700 pl-3 ml-1">
+                        {m.thinking}
+                      </pre>
+                    </details>
                   )}
                   <div className="msg-text text-[14px] leading-[1.75] break-words">
                     <Markdown content={m.content} />

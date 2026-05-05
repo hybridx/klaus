@@ -29,7 +29,7 @@ class ModelBackendConfig(BaseModel):
 
 
 class TaskRoutingRule(BaseModel):
-    """Maps a task category to preferred models, with local-first fallback."""
+    """Maps a task category (intent) to preferred models, with keywords for classification."""
 
     preferred_backend: str | None = Field(
         default=None, description="Backend to use (None = auto-select local-first)"
@@ -39,6 +39,13 @@ class TaskRoutingRule(BaseModel):
     )
     fallback_backends: list[str] = Field(
         default_factory=list, description="Ordered fallback backends if preferred is unavailable"
+    )
+    keywords: list[str] = Field(
+        default_factory=list,
+        description="Keywords that trigger this intent during classification",
+    )
+    description: str = Field(
+        default="", description="Human-readable description of this intent"
     )
     max_tokens: int | None = Field(default=None)
     temperature: float | None = Field(default=None)

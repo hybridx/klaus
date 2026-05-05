@@ -1,11 +1,16 @@
-"""Tests for the task router — model selection logic."""
+"""Tests for the task router — model selection, classification, and duplicate detection."""
 
 from __future__ import annotations
 
 import pytest
 
 from klaus.config.settings import TaskRoutingRule
-from klaus.routing.router import BackendMeta, TaskRouter
+from klaus.routing.router import (
+    BackendMeta,
+    TaskRouter,
+    check_keyword_overlap,
+    classify_task,
+)
 
 
 @pytest.fixture()
@@ -89,3 +94,123 @@ class TestTaskRouter:
         router.unregister_backend("openai")
         decision = router.resolve()
         assert decision.backend == "ollama"
+
+
+class TestClassifyTask:
+    def test_classify_coding(self):
+        assert classify_task("write a python function") == "coding"
+
+    def test_classify_creative(self):
+        assert classify_task("write me a poem about the sea") == "creative"
+
+    def test_classify_no_match(self):
+        assert classify_task("zzz nothing here zzz") is None
+
+    def test_classify_with_extra_keywords(self):
+        extra = {"translation": ["translate", "language", "i18n"]}
+        assert classify_task("translate this to French", extra) == "translation"
+
+    def test_extra_keywords_merge_with_defaults(self):
+        extra = {"coding": ["terraform", "provisioning"]}
+        assert classify_task("apply terraform provisioning") is None
+        assert classify_task("apply terraform provisioning", extra) == "coding"
+
+    def test_extra_keywords_new_task_wins(self):
+        extra = {"devops": ["terraform", "kubernetes", "deploy", "helm"]}
+        result = classify_task("deploy with helm on kubernetes", extra)
+        assert result == "devops"
+
+
+class TestRouterClassify:
+    def test_classify_uses_rule_keywords(self, router: TaskRouter):
+        router.set_rule("translation", TaskRoutingRule(
+            preferred_backend="ollama",
+            keywords=["translate", "language", "localize"],
+        ))
+        assert router.classify("translate this to Spanish") == "translation"
+
+    def test_classify_without_rules_uses_defaults(self, router: TaskRouter):
+        assert router.classify("write a python function") == "coding"
+
+    def test_classify_rule_keywords_extend_defaults(self, router: TaskRouter):
+        router.set_rule("coding", TaskRoutingRule(
+            preferred_backend="ollama",
+            keywords=["terraform"],
+        ))
+        assert router.classify("terraform plan") == "coding"
+
+    def test_get_keyword_map_includes_rules(self, router: TaskRouter):
+        router.set_rule("translation", TaskRoutingRule(
+            preferred_backend="ollama",
+            keywords=["translate", "language"],
+        ))
+        kw_map = router.get_keyword_map()
+        assert "translation" in kw_map
+        assert "translate" in kw_map["translation"]
+        assert "coding" in kw_map
+
+
+class TestKeywordOverlap:
+    def test_no_overlap(self):
+        existing = {"coding": ["code", "python", "debug"]}
+        result = check_keyword_overlap(existing, "translation", ["translate", "language"])
+        assert result is None
+
+    def test_high_overlap_detected(self):
+        existing = {"coding": ["code", "python", "debug", "implement"]}
+        result = check_keyword_overlap(
+            existing, "programming", ["code", "python", "debug"]
+        )
+        assert result == "coding"
+
+    def test_same_task_ignored(self):
+        existing = {"coding": ["code", "python", "debug"]}
+        result = check_keyword_overlap(existing, "coding", ["code", "python"])
+        assert result is None
+
+    def test_empty_keywords_no_conflict(self):
+        existing = {"coding": ["code", "python"]}
+        result = check_keyword_overlap(existing, "chat", [])
+        assert result is None
+
+    def test_case_insensitive(self):
+        existing = {"coding": ["Code", "Python"]}
+        result = check_keyword_overlap(existing, "dev", ["code", "python", "debug"])
+        assert result == "coding"
+
+    def test_below_threshold(self):
+        existing = {"coding": ["code", "python", "debug", "implement", "refactor"]}
+        result = check_keyword_overlap(
+            existing, "scripting", ["code", "bash", "shell", "terminal", "cli"],
+            threshold=0.5,
+        )
+        assert result is None
+
+
+class TestRuleKeywordsAndDescription:
+    def test_rule_stores_keywords(self):
+        rule = TaskRoutingRule(
+            preferred_backend="ollama",
+            keywords=["translate", "language"],
+            description="Translation tasks",
+        )
+        assert rule.keywords == ["translate", "language"]
+        assert rule.description == "Translation tasks"
+
+    def test_rule_defaults_empty(self):
+        rule = TaskRoutingRule(preferred_backend="ollama")
+        assert rule.keywords == []
+        assert rule.description == ""
+
+    def test_rule_roundtrip(self):
+        rule = TaskRoutingRule(
+            preferred_backend="ollama",
+            preferred_model="llama3.2",
+            keywords=["test", "verify"],
+            description="Testing tasks",
+        )
+        data = rule.model_dump()
+        restored = TaskRoutingRule(**data)
+        assert restored.keywords == ["test", "verify"]
+        assert restored.description == "Testing tasks"
+        assert restored.preferred_model == "llama3.2"

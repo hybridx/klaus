@@ -40,7 +40,11 @@ class EventType(StrEnum):
     PLAN_REJECTED = "plan.rejected"
     PLAN_STEP_START = "plan.step_start"
     PLAN_STEP_DONE = "plan.step_done"
+    PLAN_STEP_THINKING = "plan.step_thinking"
+    PLAN_STEP_REFLECT = "plan.step_reflect"
+    PLAN_PHASE = "plan.phase"
     PLAN_CONSOLIDATED = "plan.consolidated"
+    THINKING = "thinking"
     ROUTING_RULE_SET = "routing.rule_set"
     ROUTING_RULE_REMOVED = "routing.rule_removed"
 
