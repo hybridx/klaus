@@ -93,13 +93,29 @@ export default function Layout({ page, setPage, connected, theme, sidebarOpen, o
                             border-b border-border bg-surface-alt">
             <button
               onClick={() => setPage('chat')}
-              className="flex items-center gap-1 text-[12px] text-accent hover:text-stone-700
-                         dark:hover:text-stone-200 transition-colors"
+              className="text-[12px] text-stone-500 dark:text-stone-400
+                         hover:text-stone-800 dark:hover:text-stone-200 transition-colors"
             >
-              <ChevronLeft size={14} />
               Chat
             </button>
-            <span className="text-[12px] font-medium text-stone-500 dark:text-stone-400">
+            <ChevronLeft size={12} className="text-stone-300 dark:text-stone-600 rotate-180" />
+            {(() => {
+              const group = MENU_GROUPS.find((g) => g.items.some((i) => i.id === page));
+              if (!group) return null;
+              return (
+                <>
+                  <button
+                    onClick={() => setPage(group.items[0].id)}
+                    className="text-[12px] text-stone-500 dark:text-stone-400
+                               hover:text-stone-800 dark:hover:text-stone-200 transition-colors"
+                  >
+                    {group.label}
+                  </button>
+                  <ChevronLeft size={12} className="text-stone-300 dark:text-stone-600 rotate-180" />
+                </>
+              );
+            })()}
+            <span className="text-[12px] font-semibold text-stone-800 dark:text-stone-200">
               {current?.label}
             </span>
             <div className="ml-auto flex items-center gap-2">
@@ -111,10 +127,10 @@ export default function Layout({ page, setPage, connected, theme, sidebarOpen, o
               </div>
               <button
                 onClick={theme.toggle}
-                className="text-stone-300 dark:text-stone-600
-                           hover:text-stone-500 dark:hover:text-stone-400 transition-colors"
+                className="text-stone-500 dark:text-stone-400
+                           hover:text-stone-700 dark:hover:text-stone-200 transition-colors"
               >
-                {theme.isDark ? <Sun size={13} /> : <Moon size={13} />}
+                {theme.isDark ? <Sun size={15} /> : <Moon size={15} />}
               </button>
             </div>
           </header>
@@ -126,13 +142,13 @@ export default function Layout({ page, setPage, connected, theme, sidebarOpen, o
             <div className="flex items-center gap-2">
               <button
                 onClick={onToggleSidebar}
-                className="p-1 rounded-lg text-stone-400 dark:text-stone-500
-                           hover:text-stone-600 dark:hover:text-stone-300
+                className="p-1 rounded-lg text-stone-500 dark:text-stone-400
+                           hover:text-stone-700 dark:hover:text-stone-200
                            hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors"
               >
                 {sidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
               </button>
-              <span className="text-[14px] font-semibold tracking-tight text-stone-800 dark:text-stone-200">
+              <span className="text-[14px] font-semibold tracking-tight text-stone-900 dark:text-stone-100">
                 Klaus
               </span>
             </div>
@@ -141,11 +157,11 @@ export default function Layout({ page, setPage, connected, theme, sidebarOpen, o
                 href="https://hybridx.github.io/klaus/"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-[11px] text-stone-400 dark:text-stone-500
-                           hover:text-stone-600 dark:hover:text-stone-300 transition-colors
+                className="text-[12px] text-stone-500 dark:text-stone-400
+                           hover:text-stone-700 dark:hover:text-stone-200 transition-colors
                            flex items-center gap-1"
               >
-                <BookOpen size={12} />
+                <BookOpen size={14} />
                 Docs
               </a>
 
@@ -160,10 +176,10 @@ export default function Layout({ page, setPage, connected, theme, sidebarOpen, o
 
               <button
                 onClick={theme.toggle}
-                className="text-stone-300 dark:text-stone-600
-                           hover:text-stone-500 dark:hover:text-stone-400 transition-colors"
+                className="text-stone-500 dark:text-stone-400
+                           hover:text-stone-700 dark:hover:text-stone-200 transition-colors"
               >
-                {theme.isDark ? <Sun size={13} /> : <Moon size={13} />}
+                {theme.isDark ? <Sun size={15} /> : <Moon size={15} />}
               </button>
 
               <div className="w-px h-3 bg-border" />
@@ -172,11 +188,11 @@ export default function Layout({ page, setPage, connected, theme, sidebarOpen, o
               <div className="relative" ref={menuRef}>
                 <button
                   onClick={() => setMenuOpen(!menuOpen)}
-                  className="p-1 rounded-lg text-stone-400 dark:text-stone-500
-                             hover:text-stone-600 dark:hover:text-stone-300
+                  className="p-1.5 rounded-lg text-stone-500 dark:text-stone-400
+                             hover:text-stone-700 dark:hover:text-stone-200
                              hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors"
                 >
-                  {menuOpen ? <X size={16} /> : <Menu size={16} />}
+                  {menuOpen ? <X size={18} /> : <Menu size={18} />}
                 </button>
 
                 {menuOpen && (
@@ -188,8 +204,8 @@ export default function Layout({ page, setPage, connected, theme, sidebarOpen, o
                         <div key={group.label}>
                           <div className="flex items-center gap-1.5 px-3 py-1.5 text-[10px]
                                           font-semibold uppercase tracking-wider
-                                          text-stone-400 dark:text-stone-500">
-                            <GroupIcon size={10} />
+                                          text-stone-500 dark:text-stone-400">
+                            <GroupIcon size={12} />
                             {group.label}
                           </div>
                           {group.items.map((item) => {
@@ -199,13 +215,13 @@ export default function Layout({ page, setPage, connected, theme, sidebarOpen, o
                                 key={item.id}
                                 onClick={() => navigate(item.id)}
                                 className={clsx(
-                                  'w-full flex items-center gap-2 px-3 py-2 text-[12px] transition-colors',
+                                  'w-full flex items-center gap-2.5 px-3 py-2 text-[13px] transition-colors',
                                   page === item.id
                                     ? 'bg-stone-100 dark:bg-stone-800 text-stone-900 dark:text-stone-100 font-medium'
-                                    : 'text-stone-600 dark:text-stone-400 hover:bg-stone-50 dark:hover:bg-stone-800/50',
+                                    : 'text-stone-700 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-stone-800/50',
                                 )}
                               >
-                                <Icon size={13} />
+                                <Icon size={15} />
                                 {item.label}
                               </button>
                             );
@@ -218,11 +234,11 @@ export default function Layout({ page, setPage, connected, theme, sidebarOpen, o
                       href="https://hybridx.github.io/klaus/"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-2 px-3 py-2 text-[12px]
-                                 text-stone-600 dark:text-stone-400
+                      className="flex items-center gap-2.5 px-3 py-2 text-[13px]
+                                 text-stone-700 dark:text-stone-300
                                  hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors"
                     >
-                      <BookOpen size={13} />
+                      <BookOpen size={15} />
                       Documentation
                     </a>
                   </div>

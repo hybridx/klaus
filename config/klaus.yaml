@@ -60,13 +60,13 @@ model_backends:
 task_routing:
   coding:
     preferred_backend: ollama
-    preferred_model: granite-code:8b
+    preferred_model:  gemma4:26b
     fallback_backends: [ollama]
     description: Programming and software development tasks
     keywords: [code, function, class, bug, debug, refactor, implement, python, javascript, rust, html, css, sql, api, regex, git, deploy, test, script, error, exception, program]
   reasoning:
     preferred_backend: ollama
-    preferred_model: deepseek-r1:32b
+    preferred_model:  gemma4:latest
     description: Logical reasoning, math, and problem-solving
     keywords: [think, reason, logic, proof, deduce, math, equation, solve, puzzle, hypothesis, theorem, philosophy]
   chat:
@@ -81,12 +81,12 @@ task_routing:
     keywords: [analyze, data, statistics, chart, graph, trend, insight, report, metric, benchmark, research, findings]
   creative:
     preferred_backend: ollama
-    preferred_model: dolphin-llama3
+    preferred_model:  gemma4:latest
     description: Creative writing and content generation
     keywords: [write, story, poem, creative, imagine, fiction, essay, blog, song, lyrics, brainstorm, narrative]
   summarization:
     preferred_backend: ollama
-    preferred_model: mistral
+    preferred_model:  gemma4:latest
     description: Text summarization and condensation
     keywords: [summarize, summary, tldr, brief, condense, recap, overview, key points, highlights]
   image:

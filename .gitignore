@@ -10,11 +10,11 @@ build/
 *.egg
 .env
 
-# Data — keep example agents/tools/skills, ignore runtime files
+# Runtime data
+data/memory.json
 data/*.db
 data/*.db-shm
 data/*.db-wal
-data/memory.json
 data/images/
 
 # Frontend

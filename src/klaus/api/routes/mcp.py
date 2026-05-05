@@ -14,9 +14,11 @@ router = APIRouter(prefix="/mcp", tags=["mcp"])
 
 class RegisterMCPRequest(BaseModel):
     name: str = Field(..., description="Unique name for the MCP server")
-    command: str = Field(..., description="Command to launch the server")
+    command: str = Field(default="", description="Command to launch the server (stdio transport)")
     args: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
+    url: str | None = Field(default=None, description="SSE endpoint URL (alternative to command)")
+    headers: dict[str, str] = Field(default_factory=dict, description="HTTP headers for SSE transport")
     auto_connect: bool = Field(default=True, description="Connect immediately after registration")
 
 
@@ -42,6 +44,8 @@ async def register_server(req: RegisterMCPRequest):
             command=req.command,
             args=req.args,
             env=req.env,
+            url=req.url,
+            headers=req.headers,
             auto_connect=req.auto_connect,
         )
         return {

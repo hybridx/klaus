@@ -124,15 +124,13 @@ async def lifespan(app: FastAPI):
     async def _register_mcp(name: str, mcp_cfg, *, auto_connect: bool) -> None:
         if not mcp_cfg.enabled:
             return
-        if mcp_cfg.url and not mcp_cfg.command:
-            logger.info("Skipping MCP server '%s' (SSE/HTTP transport not yet supported)", name)
-            return
         try:
             await state.mcp_manager.register(
                 name=name,
                 command=mcp_cfg.command,
                 args=mcp_cfg.args,
                 env=mcp_cfg.env,
+                url=mcp_cfg.url,
                 auto_connect=auto_connect,
             )
             state.event_bus.emit(EventType.MCP_REGISTERED, {"name": name})

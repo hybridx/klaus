@@ -299,42 +299,42 @@ export default function Routing() {
             <div
               key={task}
               className="border border-stone-200 dark:border-stone-700 rounded-lg
-                         bg-stone-50 dark:bg-stone-800/50 overflow-hidden"
+                         bg-white dark:bg-stone-800/50 shadow-sm overflow-hidden"
             >
               {/* Header row */}
-              <div className="flex items-center gap-2.5 px-3 py-2.5">
+              <div className="flex items-center gap-3 px-4 py-3">
                 <button
                   onClick={() => setExpanded(isExpanded ? null : task)}
-                  className="text-stone-400 hover:text-stone-600 dark:hover:text-stone-300 transition-colors"
+                  className="text-stone-500 dark:text-stone-400 hover:text-stone-700 dark:hover:text-stone-300 transition-colors"
                 >
-                  {isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                  {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                 </button>
-                <Route size={13} className="text-stone-400 dark:text-stone-500 shrink-0" />
-                <span className="text-[12px] font-semibold text-stone-800 dark:text-stone-200 min-w-[90px]">
+                <Route size={16} className="text-stone-500 dark:text-stone-400 shrink-0" />
+                <span className="text-[13px] font-semibold text-stone-800 dark:text-stone-200 min-w-[90px]">
                   {task}
                 </span>
 
                 {!isEditing ? (
                   <>
-                    <span className="text-[11px] text-stone-500 dark:text-stone-400">
+                    <span className="text-[12px] text-stone-600 dark:text-stone-400">
                       &rarr; {rule.preferred_backend}
                       {rule.preferred_model && (
-                        <span className="font-medium text-stone-700 dark:text-stone-300">
+                        <span className="font-medium text-stone-800 dark:text-stone-300">
                           {' / '}{rule.preferred_model}
                         </span>
                       )}
                     </span>
                     {rule.fallback_backends && rule.fallback_backends.length > 0 && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full
-                                       bg-stone-100 dark:bg-stone-700
-                                       text-stone-400 dark:text-stone-500">
+                      <span className="text-[10px] px-2 py-0.5 rounded-full
+                                       bg-stone-200 dark:bg-stone-700
+                                       text-stone-600 dark:text-stone-400 font-medium">
                         +{rule.fallback_backends.length} fallback
                       </span>
                     )}
                     {rule.keywords && rule.keywords.length > 0 && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full
-                                       bg-blue-50 dark:bg-blue-900/30
-                                       text-blue-500 dark:text-blue-400">
+                      <span className="text-[10px] px-2 py-0.5 rounded-full
+                                       bg-blue-100 dark:bg-blue-900/30
+                                       text-blue-700 dark:text-blue-400 font-medium">
                         {rule.keywords.length} keywords
                       </span>
                     )}
@@ -344,8 +344,8 @@ export default function Routing() {
                     <select
                       value={editBackend}
                       onChange={(e) => { setEditBackend(e.target.value); setEditModel(''); }}
-                      className="border border-stone-300 dark:border-stone-600 rounded px-1.5 py-0.5
-                                 text-[11px] bg-transparent text-stone-800 dark:text-stone-200"
+                      className="border border-stone-300 dark:border-stone-600 rounded-lg px-2 py-1
+                                 text-[12px] bg-white dark:bg-transparent text-stone-800 dark:text-stone-200"
                     >
                       {backends.map((b) => (
                         <option key={b} value={b}>{b}</option>
@@ -354,8 +354,8 @@ export default function Routing() {
                     <select
                       value={editModel}
                       onChange={(e) => setEditModel(e.target.value)}
-                      className="border border-stone-300 dark:border-stone-600 rounded px-1.5 py-0.5
-                                 text-[11px] bg-transparent text-stone-800 dark:text-stone-200"
+                      className="border border-stone-300 dark:border-stone-600 rounded-lg px-2 py-1
+                                 text-[12px] bg-white dark:bg-transparent text-stone-800 dark:text-stone-200"
                     >
                       <option value="">default</option>
                       {modelsForBackend(editBackend).map((m) => (
@@ -365,41 +365,46 @@ export default function Routing() {
                   </div>
                 )}
 
-                <div className="ml-auto flex items-center gap-1">
+                <div className="ml-auto flex items-center gap-1.5">
                   {isEditing ? (
                     <>
                       <button
                         onClick={() => saveEdit(task)}
-                        className="p-1 rounded text-green hover:opacity-80 transition-opacity"
+                        className="p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20
+                                   text-emerald-600 dark:text-emerald-400
+                                   hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors"
                         title="Save"
                       >
-                        <Check size={13} />
+                        <Check size={15} />
                       </button>
                       <button
                         onClick={cancelEdit}
-                        className="p-1 rounded text-stone-400 hover:text-stone-600 transition-colors"
+                        className="p-1.5 rounded-lg text-stone-500 dark:text-stone-400
+                                   hover:bg-stone-100 dark:hover:bg-stone-700 transition-colors"
                         title="Cancel"
                       >
-                        <X size={13} />
+                        <X size={15} />
                       </button>
                     </>
                   ) : (
                     <>
                       <button
                         onClick={() => startEdit(task, rule)}
-                        className="p-1 rounded text-stone-300 dark:text-stone-600
-                                   hover:text-stone-600 dark:hover:text-stone-300 transition-colors"
+                        className="p-1.5 rounded-lg text-stone-400 dark:text-stone-500
+                                   hover:text-stone-700 dark:hover:text-stone-300
+                                   hover:bg-stone-100 dark:hover:bg-stone-700 transition-colors"
                         title="Edit"
                       >
-                        <Pencil size={12} />
+                        <Pencil size={15} />
                       </button>
                       <button
                         onClick={() => remove(task)}
-                        className="p-1 rounded text-stone-300 dark:text-stone-600
-                                   hover:text-red-500 dark:hover:text-red-400 transition-colors"
+                        className="p-1.5 rounded-lg text-stone-400 dark:text-stone-500
+                                   hover:text-red-600 dark:hover:text-red-400
+                                   hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                         title="Delete"
                       >
-                        <Trash2 size={13} />
+                        <Trash2 size={15} />
                       </button>
                     </>
                   )}

@@ -10,8 +10,14 @@ from typing import Any
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from mcp.client.sse import sse_client
 
 logger = logging.getLogger(__name__)
+
+
+class MCPTransport(StrEnum):
+    STDIO = "stdio"
+    SSE = "sse"
 
 
 class MCPServerStatus(StrEnum):
@@ -34,6 +40,9 @@ class MCPServerEntry:
     command: str
     args: list[str] = field(default_factory=list)
     env: dict[str, str] = field(default_factory=dict)
+    url: str | None = field(default=None)
+    headers: dict[str, str] = field(default_factory=dict)
+    transport: MCPTransport = MCPTransport.STDIO
     status: MCPServerStatus = MCPServerStatus.REGISTERED
     tools: list[MCPToolInfo] = field(default_factory=list)
     error: str | None = None
@@ -59,22 +68,29 @@ class MCPServerManager:
     async def register(
         self,
         name: str,
-        command: str,
+        command: str = "",
         args: list[str] | None = None,
         env: dict[str, str] | None = None,
+        url: str | None = None,
+        headers: dict[str, str] | None = None,
         auto_connect: bool = True,
     ) -> MCPServerEntry:
         if name in self._servers:
             raise ValueError(f"MCP server '{name}' is already registered")
+
+        transport = MCPTransport.SSE if url else MCPTransport.STDIO
 
         entry = MCPServerEntry(
             name=name,
             command=command,
             args=args or [],
             env=env or {},
+            url=url,
+            headers=headers or {},
+            transport=transport,
         )
         self._servers[name] = entry
-        logger.info("Registered MCP server: %s (%s)", name, command)
+        logger.info("Registered MCP server: %s (%s, transport=%s)", name, url or command, transport)
 
         if auto_connect:
             await self.connect(name)
@@ -89,60 +105,67 @@ class MCPServerManager:
             return
 
         try:
-            server_params = StdioServerParameters(
-                command=entry.command,
-                args=entry.args,
-                env=entry.env if entry.env else None,
-            )
-
-            # The MCP SDK's stdio_client is an async context manager that must
-            # stay open for the lifetime of the connection. We run it in a
-            # background task so __aenter__ and __aexit__ happen in the same task.
             ready: asyncio.Future[None] = asyncio.get_event_loop().create_future()
+
+            async def _run_session(read_stream, write_stream) -> None:
+                """Common session init + tool discovery, then wait forever."""
+                session = ClientSession(read_stream, write_stream)
+                await asyncio.wait_for(
+                    session.initialize(), timeout=self.CONNECTION_TIMEOUT,
+                )
+                entry._session = session
+                entry.status = MCPServerStatus.CONNECTED
+
+                tools_result = await asyncio.wait_for(
+                    session.list_tools(), timeout=self.CONNECTION_TIMEOUT,
+                )
+                entry.tools = [
+                    MCPToolInfo(
+                        name=t.name,
+                        description=t.description,
+                        input_schema=t.inputSchema if hasattr(t, "inputSchema") else None,
+                    )
+                    for t in tools_result.tools
+                ]
+
+                logger.info(
+                    "Connected to MCP server '%s' (%s) — %d tools available",
+                    name, entry.transport, len(entry.tools),
+                )
+
+                if not ready.done():
+                    ready.set_result(None)
+
+                await asyncio.Future()
 
             async def _server_lifecycle() -> None:
                 try:
-                    async with stdio_client(server_params) as (read_stream, write_stream):
-                        entry._read = read_stream
-                        entry._write = write_stream
-
-                        session = ClientSession(read_stream, write_stream)
-                        await asyncio.wait_for(
-                            session.initialize(), timeout=self.CONNECTION_TIMEOUT,
+                    if entry.transport == MCPTransport.SSE:
+                        async with sse_client(
+                            url=entry.url,
+                            headers=entry.headers if entry.headers else None,
+                        ) as (read_stream, write_stream):
+                            entry._read = read_stream
+                            entry._write = write_stream
+                            await _run_session(read_stream, write_stream)
+                    else:
+                        server_params = StdioServerParameters(
+                            command=entry.command,
+                            args=entry.args,
+                            env=entry.env if entry.env else None,
                         )
-                        entry._session = session
-                        entry.status = MCPServerStatus.CONNECTED
-
-                        tools_result = await asyncio.wait_for(
-                            session.list_tools(), timeout=self.CONNECTION_TIMEOUT,
-                        )
-                        entry.tools = [
-                            MCPToolInfo(
-                                name=t.name,
-                                description=t.description,
-                                input_schema=t.inputSchema if hasattr(t, "inputSchema") else None,
-                            )
-                            for t in tools_result.tools
-                        ]
-
-                        logger.info(
-                            "Connected to MCP server '%s' — %d tools available",
-                            name,
-                            len(entry.tools),
-                        )
-
-                        if not ready.done():
-                            ready.set_result(None)
-
-                        # Keep the context manager alive until the task is cancelled
-                        await asyncio.Future()
+                        async with stdio_client(server_params) as (read_stream, write_stream):
+                            entry._read = read_stream
+                            entry._write = write_stream
+                            await _run_session(read_stream, write_stream)
 
                 except asyncio.CancelledError:
-                    logger.info("MCP server '%s' lifecycle task cancelled", name)
+                    logger.debug("MCP server '%s' lifecycle task cancelled", name)
                 except BaseException as exc:
                     if not ready.done():
                         ready.set_exception(exc)
-                    raise
+                        return
+                    logger.debug("MCP server '%s' background error (expected on disconnect): %s", name, exc)
                 finally:
                     entry._session = None
                     entry.status = MCPServerStatus.DISCONNECTED
@@ -195,6 +218,8 @@ class MCPServerManager:
                 "name": e.name,
                 "command": e.command,
                 "args": e.args,
+                "url": e.url,
+                "transport": e.transport.value,
                 "status": e.status.value,
                 "tools": [
                     {"name": t.name, "description": t.description}

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowUp, Cpu, ChevronRight, ImagePlus, X, ChevronDown, Loader2, Wrench, Check, XCircle, Pencil, Bot } from 'lucide-react';
+import { ArrowUp, Cpu, ChevronRight, ImagePlus, X, ChevronDown, Loader2, Wrench, Check, XCircle, Pencil, Bot, Circle, CircleDot, CircleCheck, ArrowUpCircle, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 import type { SSEMessage } from '../hooks/useEventStream';
 import { postChat, postPlanAction } from '../hooks/useEventStream';
@@ -62,6 +62,12 @@ interface ChatMsg {
   planAgents?: Array<{ name: string; description: string; capabilities: string[] }>;
 }
 
+interface QueueItem {
+  id: string;
+  text: string;
+  images: ImageAttachment[];
+}
+
 interface ModelOption {
   name: string;
   backend: string;
@@ -93,20 +99,39 @@ interface StatusStep {
   step: string;
   detail: string;
   ts: number;
+  status: 'pending' | 'in_progress' | 'completed';
 }
 
-const STATUS_ICONS: Record<string, string> = {
-  classifying: '🔍',
-  classified: '🏷️',
-  splitting: '✂️',
-  routing: '🔀',
-  routed: '✅',
-  memory: '🧠',
-  generating: '⚡',
-  saving: '💾',
-  tool: '🔧',
-  tool_done: '✅',
+const STEP_DONE_MAP: Record<string, string> = {
+  classifying: 'classified',
+  splitting: 'split',
+  routing: 'routed',
+  generating: 'generated',
+  saving: 'saved',
+  tool: 'tool_done',
 };
+
+const STEP_ORDER = ['classifying', 'splitting', 'routing', 'memory', 'generating', 'saving'];
+
+function buildTodoSteps(rawSteps: StatusStep[]): StatusStep[] {
+  const seen = new Map<string, StatusStep>();
+  for (const s of rawSteps) {
+    const baseStep = Object.entries(STEP_DONE_MAP).find(([, done]) => done === s.step)?.[0];
+    if (baseStep && seen.has(baseStep)) {
+      seen.get(baseStep)!.status = 'completed';
+      continue;
+    }
+    if (!seen.has(s.step)) {
+      seen.set(s.step, { ...s, status: 'in_progress' });
+    }
+  }
+
+  const entries = Array.from(seen.values());
+  for (let i = 0; i < entries.length - 1; i++) {
+    if (entries[i].status === 'in_progress') entries[i].status = 'completed';
+  }
+  return entries;
+}
 
 export default function Chat({ ws, setPage, sessionId }: Props) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
@@ -116,9 +141,14 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
   const [selectedModel, setSelectedModel] = useState<ModelOption | null>({ name: 'Auto', backend: '' });
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [images, setImages] = useState<ImageAttachment[]>([]);
+  const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [showQueue, setShowQueue] = useState(true);
+  const [editingQueueId, setEditingQueueId] = useState<string | null>(null);
+  const [editingQueueText, setEditingQueueText] = useState('');
   const [loaded, setLoaded] = useState(false);
   const currentRef = useRef<ChatMsg | null>(null);
   const pendingRoutingRef = useRef<RoutingInfo | null>(null);
+  const queueDrainRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -227,7 +257,7 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
         const d = msg.data;
         setStatusSteps((prev) => [
           ...prev,
-          { step: d.step as string, detail: d.detail as string, ts: Date.now() },
+          { step: d.step as string, detail: d.detail as string, ts: Date.now(), status: 'in_progress' as const },
         ]);
         scrollBottom();
       } else if (msg.type === 'chat.token' && currentRef.current) {
@@ -246,6 +276,7 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
         setStreaming(false);
         setStatusSteps([]);
         setMessages((prev) => [...prev]);
+        queueDrainRef.current = true;
       } else if (msg.type === 'chat.error') {
         if (currentRef.current) {
           currentRef.current.content += `\n[Error: ${msg.data?.error}]`;
@@ -490,6 +521,28 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
     });
   }, [ws, scrollBottom]);
 
+  const removeFromQueue = useCallback((id: string) => {
+    setQueue((prev) => prev.filter((q) => q.id !== id));
+  }, []);
+
+  const promoteInQueue = useCallback((id: string) => {
+    setQueue((prev) => {
+      const idx = prev.findIndex((q) => q.id === id);
+      if (idx <= 0) return prev;
+      const copy = [...prev];
+      [copy[idx - 1], copy[idx]] = [copy[idx], copy[idx - 1]];
+      return copy;
+    });
+  }, []);
+
+  const saveQueueEdit = useCallback((id: string) => {
+    setQueue((prev) => prev.map((q) =>
+      q.id === id ? { ...q, text: editingQueueText } : q,
+    ));
+    setEditingQueueId(null);
+    setEditingQueueText('');
+  }, [editingQueueText]);
+
   const addImages = useCallback(async (files: FileList | File[]) => {
     const attachments: ImageAttachment[] = [];
     for (const f of Array.from(files)) {
@@ -509,35 +562,60 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
     });
   }, []);
 
-  const send = () => {
-    const text = inputRef.current?.value.trim();
-    if ((!text && images.length === 0) || streaming) return;
-
-    const imageData = images.map((img) => img.base64);
-    const imagePreviews = images.map((img) => img.preview);
+  const sendDirect = useCallback((text: string, attachedImages: ImageAttachment[]) => {
+    const imageData = attachedImages.map((img) => img.base64);
+    const imagePreviews = attachedImages.map((img) => img.preview);
 
     const assistant: ChatMsg = { role: 'assistant', content: '', done: false };
     currentRef.current = assistant;
     setMessages((prev) => [
       ...prev,
-      { role: 'user', content: text || '', images: imagePreviews.length > 0 ? imagePreviews : undefined },
+      { role: 'user', content: text, images: imagePreviews.length > 0 ? imagePreviews : undefined },
       assistant,
     ]);
     setStreaming(true);
     setStatusSteps([]);
-    inputRef.current!.value = '';
-    inputRef.current!.style.height = 'auto';
 
     postChat({
-      messages: [{ role: 'user', content: text || '' }],
+      messages: [{ role: 'user', content: text }],
       id: sessionId,
       images: imageData.length > 0 ? imageData : undefined,
       model: selectedModel?.backend ? selectedModel.name : undefined,
       backend: selectedModel?.backend || undefined,
     }).catch(console.error);
 
-    setImages([]);
     scrollBottom();
+  }, [sessionId, selectedModel, scrollBottom]);
+
+  useEffect(() => {
+    if (!queueDrainRef.current || streaming) return;
+    queueDrainRef.current = false;
+    if (queue.length === 0) return;
+
+    const [next, ...rest] = queue;
+    setQueue(rest);
+    setTimeout(() => sendDirect(next.text, next.images), 150);
+  }, [streaming, queue, sendDirect]);
+
+  const send = () => {
+    const text = inputRef.current?.value.trim();
+    if (!text && images.length === 0) return;
+
+    const currentImages = [...images];
+    inputRef.current!.value = '';
+    inputRef.current!.style.height = 'auto';
+    setImages([]);
+
+    if (streaming) {
+      setQueue((prev) => [...prev, {
+        id: Date.now().toString(),
+        text: text || '',
+        images: currentImages,
+      }]);
+      return;
+    }
+
+    sendDirect(text || '', currentImages);
   };
 
   const onKey = (e: React.KeyboardEvent) => {
@@ -952,28 +1030,46 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
                       <ChevronRight size={8} className="opacity-0 group-hover:opacity-60 transition-opacity" />
                     </button>
                   )}
-                  {!m.done && !m.content && streaming && statusSteps.length > 0 && (
-                    <div className="flex flex-col gap-1 mb-2">
-                      {statusSteps.map((s, si) => {
-                        const isLatest = si === statusSteps.length - 1;
-                        return (
-                          <div key={si} className={clsx(
-                            'flex items-center gap-1.5 text-[11px] transition-opacity duration-300',
-                            isLatest
-                              ? 'text-stone-600 dark:text-stone-300'
-                              : 'text-stone-400 dark:text-stone-600',
-                          )}>
-                            <span className="text-[10px]">
-                              {STATUS_ICONS[s.step] || '⏳'}
-                            </span>
-                            <span className={clsx(isLatest && 'animate-pulse')}>
-                              {s.detail}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                  {!m.done && !m.content && streaming && statusSteps.length > 0 && (() => {
+                    const todos = buildTodoSteps(statusSteps);
+                    return (
+                      <div className="mb-3 border border-stone-200 dark:border-stone-700 rounded-xl
+                                      bg-white dark:bg-stone-800/60 shadow-sm overflow-hidden max-w-[380px]">
+                        <div className="flex items-center gap-2 px-3 py-2 border-b border-stone-100 dark:border-stone-700/60">
+                          <CircleDot size={14} className="text-stone-500 dark:text-stone-400" />
+                          <span className="text-[12px] font-semibold text-stone-700 dark:text-stone-300">
+                            To-dos
+                          </span>
+                          <span className="text-[11px] text-stone-400 dark:text-stone-500 font-medium">
+                            {todos.length}
+                          </span>
+                        </div>
+                        <div className="flex flex-col py-1">
+                          {todos.map((s, si) => (
+                            <div key={si} className="flex items-center gap-2.5 px-3 py-1.5">
+                              {s.status === 'completed' && (
+                                <CircleCheck size={16} className="text-emerald-500 dark:text-emerald-400 shrink-0" />
+                              )}
+                              {s.status === 'in_progress' && (
+                                <Loader2 size={16} className="animate-spin text-blue-500 dark:text-blue-400 shrink-0" />
+                              )}
+                              {s.status === 'pending' && (
+                                <Circle size={16} className="text-stone-300 dark:text-stone-600 shrink-0" />
+                              )}
+                              <span className={clsx(
+                                'text-[12px] leading-tight',
+                                s.status === 'completed' && 'text-stone-400 dark:text-stone-500 line-through',
+                                s.status === 'in_progress' && 'text-stone-700 dark:text-stone-200 font-medium',
+                                s.status === 'pending' && 'text-stone-400 dark:text-stone-500',
+                              )}>
+                                {s.detail}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
                   {m.thinking && (
                     <details className="mb-2 group">
                       <summary className="cursor-pointer text-[10px] text-stone-400 dark:text-stone-500
@@ -1024,6 +1120,111 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
                   </button>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Queue widget */}
+          {queue.length > 0 && (
+            <div className="mb-2 border border-stone-200 dark:border-stone-700 rounded-xl
+                            bg-white dark:bg-stone-800/60 shadow-sm overflow-hidden">
+              <button
+                onClick={() => setShowQueue(!showQueue)}
+                className="w-full flex items-center gap-2 px-3 py-2
+                           hover:bg-stone-50 dark:hover:bg-stone-800 transition-colors"
+              >
+                <ChevronDown size={14} className={clsx(
+                  'text-stone-400 dark:text-stone-500 transition-transform',
+                  !showQueue && '-rotate-90',
+                )} />
+                <span className="text-[12px] font-semibold text-stone-600 dark:text-stone-300">
+                  {queue.length} Queued
+                </span>
+              </button>
+
+              {showQueue && (
+                <div className="border-t border-stone-100 dark:border-stone-700/60">
+                  {queue.map((item, idx) => (
+                    <div
+                      key={item.id}
+                      className="flex items-start gap-2.5 px-3 py-2
+                                 border-b border-stone-50 dark:border-stone-700/40 last:border-b-0
+                                 hover:bg-stone-50 dark:hover:bg-stone-800/40 transition-colors group"
+                    >
+                      <Circle size={16} className="text-stone-300 dark:text-stone-600 shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        {editingQueueId === item.id ? (
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              autoFocus
+                              value={editingQueueText}
+                              onChange={(e) => setEditingQueueText(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') saveQueueEdit(item.id);
+                                if (e.key === 'Escape') setEditingQueueId(null);
+                              }}
+                              className="flex-1 text-[12px] bg-transparent border border-stone-200
+                                         dark:border-stone-600 rounded px-2 py-1
+                                         text-stone-800 dark:text-stone-200
+                                         focus:outline-none focus:ring-1 focus:ring-blue-400"
+                            />
+                            <button
+                              onClick={() => saveQueueEdit(item.id)}
+                              className="p-1 text-emerald-500 hover:text-emerald-600 transition-colors"
+                            >
+                              <Check size={14} />
+                            </button>
+                            <button
+                              onClick={() => setEditingQueueId(null)}
+                              className="p-1 text-stone-400 hover:text-stone-600 transition-colors"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-[12px] text-stone-600 dark:text-stone-300 line-clamp-2">
+                            {item.text}
+                            {item.images.length > 0 && (
+                              <span className="text-[10px] text-stone-400 ml-1">
+                                +{item.images.length} image{item.images.length > 1 ? 's' : ''}
+                              </span>
+                            )}
+                          </span>
+                        )}
+                      </div>
+                      {editingQueueId !== item.id && (
+                        <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => { setEditingQueueId(item.id); setEditingQueueText(item.text); }}
+                            className="p-1 text-stone-400 hover:text-stone-600
+                                       dark:hover:text-stone-300 transition-colors rounded"
+                            title="Edit"
+                          >
+                            <Pencil size={13} />
+                          </button>
+                          {idx > 0 && (
+                            <button
+                              onClick={() => promoteInQueue(item.id)}
+                              className="p-1 text-stone-400 hover:text-blue-500
+                                         transition-colors rounded"
+                              title="Move up"
+                            >
+                              <ArrowUpCircle size={13} />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => removeFromQueue(item.id)}
+                            className="p-1 text-stone-400 hover:text-red-500
+                                       transition-colors rounded"
+                            title="Remove"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -1122,14 +1323,19 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
                   <ImagePlus size={15} />
                 </button>
 
-                {streaming && statusSteps.length > 0 && (
-                  <span className="text-[10px] text-stone-400 dark:text-stone-500 animate-pulse flex items-center gap-1">
-                    <span>{STATUS_ICONS[statusSteps[statusSteps.length - 1].step] || '⏳'}</span>
-                    {statusSteps[statusSteps.length - 1].detail}
-                  </span>
-                )}
+                {streaming && statusSteps.length > 0 && (() => {
+                  const todos = buildTodoSteps(statusSteps);
+                  const active = todos.find((t) => t.status === 'in_progress');
+                  return (
+                    <span className="text-[10px] text-stone-500 dark:text-stone-400 flex items-center gap-1.5">
+                      <Loader2 size={10} className="animate-spin text-blue-500" />
+                      {active?.detail || 'Processing...'}
+                    </span>
+                  );
+                })()}
                 {streaming && statusSteps.length === 0 && (
-                  <span className="text-[10px] text-stone-400 dark:text-stone-500 animate-pulse">
+                  <span className="text-[10px] text-stone-400 dark:text-stone-500 flex items-center gap-1.5">
+                    <Loader2 size={10} className="animate-spin" />
                     Thinking...
                   </span>
                 )}
