@@ -32,6 +32,8 @@ class EventType(StrEnum):
     MCP_REMOVED = "mcp.removed"
     MCP_TOOL_CALLED = "mcp.tool_called"
     TOOL_RESULT = "tool.result"
+    SUBTASK_START = "subtask.start"
+    SUBTASK_DONE = "subtask.done"
     ROUTING_RULE_SET = "routing.rule_set"
     ROUTING_RULE_REMOVED = "routing.rule_removed"
 

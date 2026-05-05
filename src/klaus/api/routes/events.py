@@ -52,130 +52,169 @@ async def websocket_endpoint(ws: WebSocket):
 
 
 async def _handle_chat(ws: WebSocket, msg: dict, state) -> None:
-    """Handle a chat message using the LangGraph agent with streaming."""
-    from klaus.routing.router import classify_task
+    """Handle a chat message — splits multi-part requests into sub-tasks."""
+    from klaus.routing.splitter import split_tasks
 
     messages_raw = msg.get("messages", [])
     images_raw = msg.get("images", [])
-    task = msg.get("task")
-    model = msg.get("model")
-    backend = msg.get("backend")
+    explicit_model = msg.get("model")
+    explicit_backend = msg.get("backend")
     temperature = msg.get("temperature", 0.7)
     chat_id = msg.get("id", "")
-
-    if not task:
-        user_text = " ".join(m.get("content", "") for m in messages_raw if m.get("role") == "user")
-        task = classify_task(user_text)
-
-    decision = state.task_router.resolve(
-        task=task,
-        requested_backend=backend,
-        requested_model=model,
-    )
-
-    state.event_bus.emit(
-        EventType.MODEL_ROUTED,
-        {
-            "backend": decision.backend,
-            "model": decision.model,
-            "task": decision.task,
-            "reason": decision.reason,
-            "chat_id": chat_id,
-        },
-    )
-
-    await state.event_bus.send_to_ws(
-        ws,
-        EventType.MODEL_ROUTED,
-        {
-            "backend": decision.backend,
-            "model": decision.model,
-            "reason": decision.reason,
-            "chat_id": chat_id,
-        },
-    )
-
-    messages = []
-    for m in messages_raw:
-        cm = ChatMessage(role=m["role"], content=m["content"])
-        if m["role"] == "user" and images_raw:
-            cm.images = images_raw
-        messages.append(cm)
 
     for m in messages_raw:
         await state.db.save_message(chat_id, m["role"], m["content"])
 
-    state.event_bus.emit(
-        EventType.CHAT_REQUEST,
-        {"backend": decision.backend, "model": decision.model, "chat_id": chat_id},
+    if state.agent is None:
+        state.init_agent()
+
+    user_text = " ".join(
+        m.get("content", "") for m in messages_raw if m.get("role") == "user"
     )
 
-    try:
-        if state.agent is None:
-            state.init_agent()
+    subtasks = split_tasks("") if explicit_backend else split_tasks(user_text)
 
-        full_response = ""
+    is_multi = len(subtasks) > 1
 
-        async for event in state.agent.stream(
-            messages=messages,
-            backend=decision.backend,
-            model=decision.model,
-            temperature=temperature,
-            metadata={"chat_id": chat_id, "task": task},
-        ):
-            if event["type"] == "token":
-                full_response += event["content"]
-                await state.event_bus.send_to_ws(
-                    ws, EventType.CHAT_TOKEN, {"token": event["content"], "chat_id": chat_id}
-                )
-            elif event["type"] == "tool_call":
-                await state.event_bus.send_to_ws(
-                    ws,
-                    EventType.MCP_TOOL_CALLED,
-                    {"name": event["name"], "args": event["args"], "chat_id": chat_id},
-                )
-                state.event_bus.emit(
-                    EventType.MCP_TOOL_CALLED,
-                    {"name": event["name"], "chat_id": chat_id},
-                )
-            elif event["type"] == "tool_result":
-                await state.event_bus.send_to_ws(
-                    ws,
-                    EventType.TOOL_RESULT,
-                    {
-                        "name": event["name"],
-                        "content": event["content"],
-                        "chat_id": chat_id,
-                    },
-                )
-            elif event["type"] == "done":
-                await state.event_bus.send_to_ws(
-                    ws, EventType.CHAT_DONE, {"chat_id": chat_id}
-                )
+    for st in subtasks:
+        task = st.task_type
+        if explicit_backend:
+            decision = state.task_router.resolve(
+                task=task,
+                requested_backend=explicit_backend,
+                requested_model=explicit_model,
+            )
+        else:
+            decision = state.task_router.resolve(task=task)
 
-        if full_response:
-            await state.db.save_message(
-                chat_id, "assistant", full_response,
-                model=decision.model, backend=decision.backend,
+        if is_multi:
+            await state.event_bus.send_to_ws(
+                ws,
+                EventType.SUBTASK_START,
+                {
+                    "index": st.index,
+                    "text": st.text,
+                    "task": task or "general",
+                    "backend": decision.backend,
+                    "model": decision.model,
+                    "chat_id": chat_id,
+                },
             )
 
-        state.event_bus.emit(
-            EventType.CHAT_RESPONSE,
+        await state.event_bus.send_to_ws(
+            ws,
+            EventType.MODEL_ROUTED,
             {
                 "backend": decision.backend,
                 "model": decision.model,
+                "reason": decision.reason,
                 "chat_id": chat_id,
-                "streamed": True,
             },
         )
-    except Exception as exc:
-        logger.error("Agent streaming error: %s", exc)
-        await state.event_bus.send_to_ws(
-            ws, EventType.CHAT_ERROR, {"error": str(exc), "chat_id": chat_id}
-        )
         state.event_bus.emit(
-            EventType.CHAT_ERROR, {"error": str(exc), "chat_id": chat_id}
+            EventType.MODEL_ROUTED,
+            {
+                "backend": decision.backend,
+                "model": decision.model,
+                "task": task,
+                "reason": decision.reason,
+                "chat_id": chat_id,
+            },
         )
+
+        sub_messages = []
+        for m in messages_raw:
+            cm = ChatMessage(role=m["role"], content=m["content"])
+            if m["role"] == "user" and images_raw:
+                cm.images = images_raw
+            sub_messages.append(cm)
+        if is_multi:
+            sub_messages[-1] = ChatMessage(role="user", content=st.text)
+
+        state.event_bus.emit(
+            EventType.CHAT_REQUEST,
+            {"backend": decision.backend, "model": decision.model, "chat_id": chat_id},
+        )
+
+        try:
+            response = await _stream_subtask(
+                ws, state, sub_messages, decision, temperature, chat_id, task,
+            )
+            if response:
+                await state.db.save_message(
+                    chat_id, "assistant", response,
+                    model=decision.model, backend=decision.backend,
+                )
+            state.event_bus.emit(
+                EventType.CHAT_RESPONSE,
+                {
+                    "backend": decision.backend,
+                    "model": decision.model,
+                    "chat_id": chat_id,
+                    "streamed": True,
+                },
+            )
+        except Exception as exc:
+            logger.error("Agent streaming error: %s", exc)
+            await state.event_bus.send_to_ws(
+                ws, EventType.CHAT_ERROR, {"error": str(exc), "chat_id": chat_id}
+            )
+            state.event_bus.emit(
+                EventType.CHAT_ERROR, {"error": str(exc), "chat_id": chat_id}
+            )
+
+        if is_multi:
+            await state.event_bus.send_to_ws(
+                ws,
+                EventType.SUBTASK_DONE,
+                {"index": st.index, "chat_id": chat_id},
+            )
+
+    await state.event_bus.send_to_ws(
+        ws, EventType.CHAT_DONE, {"chat_id": chat_id}
+    )
+
+
+async def _stream_subtask(
+    ws: WebSocket, state, messages, decision, temperature, chat_id, task,
+) -> str:
+    """Run agent for a single sub-task and stream events back. Returns full text."""
+    full_response = ""
+
+    async for event in state.agent.stream(
+        messages=messages,
+        backend=decision.backend,
+        model=decision.model,
+        temperature=temperature,
+        metadata={"chat_id": chat_id, "task": task},
+    ):
+        if event["type"] == "token":
+            full_response += event["content"]
+            await state.event_bus.send_to_ws(
+                ws, EventType.CHAT_TOKEN, {"token": event["content"], "chat_id": chat_id}
+            )
+        elif event["type"] == "tool_call":
+            await state.event_bus.send_to_ws(
+                ws,
+                EventType.MCP_TOOL_CALLED,
+                {"name": event["name"], "args": event["args"], "chat_id": chat_id},
+            )
+            state.event_bus.emit(
+                EventType.MCP_TOOL_CALLED,
+                {"name": event["name"], "chat_id": chat_id},
+            )
+        elif event["type"] == "tool_result":
+            await state.event_bus.send_to_ws(
+                ws,
+                EventType.TOOL_RESULT,
+                {
+                    "name": event["name"],
+                    "content": event["content"],
+                    "chat_id": chat_id,
+                },
+            )
+
+    return full_response
 
 
 @router.get("/history")

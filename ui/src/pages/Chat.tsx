@@ -23,13 +23,22 @@ interface ToolCallInfo {
   result?: string;
 }
 
+interface SubtaskInfo {
+  index: number;
+  text: string;
+  task: string;
+  backend: string;
+  model: string;
+}
+
 interface ChatMsg {
-  role: 'user' | 'assistant' | 'system' | 'tool';
+  role: 'user' | 'assistant' | 'system' | 'tool' | 'subtask-divider';
   content: string;
   images?: string[];
   done?: boolean;
   routing?: RoutingInfo;
   toolCall?: ToolCallInfo;
+  subtask?: SubtaskInfo;
 }
 
 interface ModelOption {
@@ -193,6 +202,38 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
           return copy;
         });
         scrollBottom();
+      } else if (msg.type === 'subtask.start' && msg.data?.chat_id) {
+        const d = msg.data;
+        const subtaskInfo: SubtaskInfo = {
+          index: d.index as number,
+          text: d.text as string,
+          task: d.task as string,
+          backend: d.backend as string,
+          model: d.model as string,
+        };
+        if (currentRef.current) {
+          currentRef.current.done = true;
+        }
+        const assistant: ChatMsg = { role: 'assistant', content: '', done: false };
+        currentRef.current = assistant;
+        pendingRoutingRef.current = null;
+        setMessages((prev) => {
+          const cleaned = prev.filter(
+            (m) => !(m.role === 'assistant' && !m.done && !m.content),
+          );
+          return [
+            ...cleaned,
+            { role: 'subtask-divider', content: '', subtask: subtaskInfo },
+            assistant,
+          ];
+        });
+        scrollBottom();
+      } else if (msg.type === 'subtask.done' && msg.data?.chat_id) {
+        if (currentRef.current) {
+          currentRef.current.done = true;
+        }
+        currentRef.current = null;
+        setMessages((prev) => [...prev]);
       }
     });
   }, [ws, scrollBottom]);
@@ -310,6 +351,26 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
           <div className="max-w-[640px] mx-auto px-6 py-6 flex flex-col gap-5">
             {messages.map((m, i) => {
               if (m.role === 'system') return null;
+
+              if (m.role === 'subtask-divider' && m.subtask) {
+                const st = m.subtask;
+                return (
+                  <div key={i} className="flex items-center gap-2 py-1">
+                    <div className="flex-1 h-px bg-stone-200 dark:bg-stone-700" />
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full
+                                    bg-stone-100 dark:bg-stone-800 border border-stone-200 dark:border-stone-700">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider
+                                       text-stone-500 dark:text-stone-400">
+                        {st.task}
+                      </span>
+                      <span className="text-[10px] text-stone-400 dark:text-stone-500">
+                        {st.model} on {st.backend}
+                      </span>
+                    </div>
+                    <div className="flex-1 h-px bg-stone-200 dark:bg-stone-700" />
+                  </div>
+                );
+              }
 
               if (m.role === 'tool') {
                 const tc = m.toolCall;
