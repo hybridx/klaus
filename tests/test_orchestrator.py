@@ -102,7 +102,8 @@ class TestOrchestratorInit:
 
 
 class TestResolveStep:
-    def test_resolve_sets_backend_and_model(self):
+    @pytest.mark.asyncio
+    async def test_resolve_sets_backend_and_model(self):
         class FakeDecision:
             backend = "ollama"
             model = "llama3.2"
@@ -123,11 +124,12 @@ class TestResolveStep:
             task_router=FakeRouter(),
         )
         step = PlanStep(index=0, description="test", task_type="coding")
-        result = orch.resolve_step(step)
+        result = await orch.resolve_step_async(step)
         assert result.backend == "ollama"
         assert result.model == "llama3.2"
 
-    def test_resolve_uses_agent_preferences(self):
+    @pytest.mark.asyncio
+    async def test_resolve_uses_agent_preferences(self):
         class FakeDecision:
             backend = "ollama"
             model = "llama3.2"
@@ -155,7 +157,7 @@ class TestResolveStep:
             agents=[agent],
         )
         step = PlanStep(index=0, description="test", task_type="coding", agent="code_expert")
-        result = orch.resolve_step(step)
+        result = await orch.resolve_step_async(step)
         assert result.backend == "ollama"
         assert result.model == "granite-code:8b"
 

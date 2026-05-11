@@ -175,6 +175,9 @@ async def lifespan(app: FastAPI):
         logger.info("Loaded %d MD-based agents from %s", len(md_agents), agents_dir)
     state.md_agents = md_agents  # type: ignore[attr-defined]
 
+    # ── LangGraph checkpointer (PostgreSQL) ─────────────────
+    await state.init_checkpointer()
+
     # ── Agent ────────────────────────────────────────────────
     orch_cfg = settings.orchestrator.model_dump() if hasattr(settings, "orchestrator") else None
     state.init_agent(orchestrator_config=orch_cfg, md_agents=md_agents)
@@ -209,6 +212,7 @@ async def lifespan(app: FastAPI):
     await state.memory.shutdown()
     await state.model_registry.shutdown_all()
     await state.mcp_manager.shutdown_all()
+    await state.close_checkpointer()
     await state.db.close()
 
 

@@ -1,0 +1,47 @@
+---
+description: Enforce KISS, short functions, and clean code principles across the codebase
+alwaysApply: true
+---
+
+# Clean Code — KISS, Short, Readable
+
+## KISS — Keep It Simple
+
+- Prefer the simplest solution that works. No abstractions until the second or third use.
+- Avoid clever tricks — write code a junior dev can read on the first pass.
+- One function does one thing. If you need an "and" to describe it, split it.
+
+## Keep It Short
+
+- Functions: **< 25 lines** (excluding docstrings). If longer, extract a helper.
+- Modules: **< 300 lines**. If growing beyond that, split by responsibility.
+- Arguments: **≤ 4 positional params**. Use a config object or dataclass beyond that.
+- Nesting: **≤ 3 levels deep**. Use early returns and guard clauses to flatten.
+
+```python
+# ❌ Deep nesting
+def process(items):
+    if items:
+        for item in items:
+            if item.valid:
+                if item.ready:
+                    do_work(item)
+
+# ✅ Guard clauses
+def process(items):
+    if not items:
+        return
+    for item in items:
+        if not item.valid or not item.ready:
+            continue
+        do_work(item)
+```
+
+## Clean Code
+
+- **Naming**: Variables and functions should read like prose — `get_active_users()`, not `gau()`.
+- **No dead code**: Delete commented-out code and unused imports. Git remembers.
+- **DRY**: If you copy-paste more than 3 lines, extract a shared helper.
+- **No magic values**: Use named constants or enums instead of bare strings/numbers.
+- **Type hints everywhere**: Every function signature gets full type annotations.
+- **Docstrings on public API only**: Internal helpers are self-documenting via good names.

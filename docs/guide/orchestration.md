@@ -127,9 +127,7 @@ Add the `orchestrator` section to `config/klaus.yaml`:
 orchestrator:
   planner_backend: ollama          # Backend for the planner model
   planner_model: qwen3:14b         # Model used for planning and consolidation
-  parallel_execution: true         # Execute independent tasks in parallel
   md_tools_dir: data/tools         # Directory for MD-based tool definitions
-  complexity_threshold: 2          # Min sentence count to trigger orchestration
 ```
 
 ### Configuration Fields
@@ -138,9 +136,7 @@ orchestrator:
 |-------|---------|-------------|
 | `planner_backend` | `null` (uses default) | Which backend to use for the planner/consolidator |
 | `planner_model` | `null` (uses default) | Specific model for planning |
-| `parallel_execution` | `true` | Whether independent tasks can run in parallel |
 | `md_tools_dir` | `data/tools` | Where to find markdown tool definitions |
-| `complexity_threshold` | `2` | Minimum sentence count to consider a request complex |
 
 ## How Task Types Map to Models
 

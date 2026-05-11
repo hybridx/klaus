@@ -217,15 +217,17 @@ Klaus's MCP manager includes several resilience features that match Cursor's beh
 
 **What it is:** Directed graph-based agent orchestration from LangChain. Agents are state machines where nodes are processing steps and edges define transitions.
 
-**How klaus relates:** klaus *uses* LangGraph as its agent runtime. The `klausAgent` class builds a `create_react_agent` per request, feeding it the routed LLM and tools collected from the superpower registry. LangGraph handles the ReAct loop, tool calling, and message management.
+**How klaus relates:** klaus *uses* LangGraph as its agent runtime. The `klausAgent` class builds an explicit 5-step `StateGraph` per request, feeding it the routed LLM and tools collected from the superpower registry. LangGraph handles the ReAct loop, tool calling, and message management.
 
 | Concept | LangGraph | klaus |
 |---|---|---|
-| Agent definition | Graph nodes + edges | `klausAgent` wraps `create_react_agent` |
-| State management | Explicit `StateGraph` with checkpointing | Memory tree + per-request rebuild |
-| Tool binding | Pass to `create_react_agent` | Superpowers collect tools automatically |
+| Agent definition | Graph nodes + edges | `klausAgent` builds an explicit `StateGraph` (worker + tools nodes) |
+| State management | Explicit `StateGraph` with checkpointing | `AsyncPostgresSaver` persists checkpoints to the same PostgreSQL database |
+| Tool binding | Pass tools to graph nodes | Superpowers collect tools automatically |
 | Model selection | Caller chooses LLM | Task router selects model based on rules + locality |
 | Observability | LangSmith | Langfuse (or any LangChain callback) |
+
+**Checkpointing:** LangGraph's `AsyncPostgresSaver` (from `langgraph-checkpoint-postgres`) is connected to the same PostgreSQL database that stores memory, conversations, and embeddings. This means conversation thread state survives server restarts — multi-turn tool loops and reasoning chains resume exactly where they left off. Each conversation's `chat_id` maps to a LangGraph `thread_id` for checkpoint isolation.
 
 **Key difference:** LangGraph is a library — you build your own agent loop. klaus is a platform that wraps LangGraph with model routing, memory, plugin management, MCP, and a real-time UI.
 

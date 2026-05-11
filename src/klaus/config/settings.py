@@ -141,14 +141,8 @@ class OrchestratorConfig(BaseModel):
     planner_model: str | None = Field(
         default=None, description="Model for planning/decomposition (None = backend default)"
     )
-    parallel_execution: bool = Field(
-        default=True, description="Execute independent tasks in parallel"
-    )
     md_tools_dir: str = Field(
         default="data/tools", description="Directory for MD-based tool definitions"
-    )
-    complexity_threshold: int = Field(
-        default=2, description="Min sentence count to trigger orchestration instead of single-agent"
     )
 
 

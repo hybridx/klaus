@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+import logging
+import os
+
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from psycopg import AsyncConnection
+
 from klaus.agents.graph import klausAgent
 from klaus.db import Database
 from klaus.events.bus import EventBus
@@ -10,6 +16,10 @@ from klaus.memory.store import MemoryManager, PostgresStore
 from klaus.models.registry import ModelRegistry
 from klaus.routing.router import TaskRouter
 from klaus.superpowers.registry import SuperpowerRegistry
+
+logger = logging.getLogger(__name__)
+
+_DEFAULT_PG_URL = "postgresql://klaus:klaus@localhost:5432/klaus"
 
 
 class AppState:
@@ -22,8 +32,9 @@ class AppState:
         pool_min: int = 2,
         pool_max: int = 10,
     ) -> None:
+        self._database_url = database_url or os.getenv("DATABASE_URL", _DEFAULT_PG_URL)
         self.db = Database(
-            url=database_url,
+            url=self._database_url,
             pool_min=pool_min,
             pool_max=pool_max,
         )
@@ -34,10 +45,30 @@ class AppState:
         self.memory: MemoryManager = None  # type: ignore[assignment]
         self.superpowers: SuperpowerRegistry | None = None
         self.agent: klausAgent | None = None
+        self.checkpointer: AsyncPostgresSaver | None = None
+        self._checkpoint_conn: AsyncConnection | None = None
 
     async def init_db(self) -> None:
         await self.db.connect()
         self.memory = MemoryManager(store=PostgresStore(self.db), db=self.db)
+
+    async def init_checkpointer(self) -> AsyncPostgresSaver:
+        """Open a dedicated psycopg connection for LangGraph checkpointing."""
+        self._checkpoint_conn = await AsyncConnection.connect(
+            self._database_url,
+            autocommit=True,
+            prepare_threshold=0,
+        )
+        self.checkpointer = AsyncPostgresSaver(conn=self._checkpoint_conn)
+        await self.checkpointer.setup()
+        logger.info("LangGraph checkpointer ready (PostgreSQL)")
+        return self.checkpointer
+
+    async def close_checkpointer(self) -> None:
+        if self._checkpoint_conn and not self._checkpoint_conn.closed:
+            await self._checkpoint_conn.close()
+            self._checkpoint_conn = None
+            self.checkpointer = None
 
     def init_superpowers(self) -> SuperpowerRegistry:
         self.superpowers = SuperpowerRegistry(self.memory)
@@ -53,6 +84,7 @@ class AppState:
             task_router=self.task_router,
             orchestrator_config=orchestrator_config,
             md_agents=md_agents,
+            checkpointer=self.checkpointer,
         )
 
 

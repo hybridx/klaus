@@ -17,8 +17,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Annotated, Any, TypedDict
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langgraph.prebuilt import create_react_agent
 
+from klaus.agents.graph import build_react_graph
 from klaus.agents.md_agents import AgentSpec
 from klaus.models.base import ChatMessage
 from klaus.routing.router import classify_task
@@ -315,40 +315,8 @@ class Orchestrator:
             ))
         return steps
 
-    def resolve_step(self, step: PlanStep) -> PlanStep:
-        """Resolve which backend/model to use for a plan step.
-
-        If a specialist agent is assigned, use its preferred model/backend.
-        Otherwise fall back to the task router.
-        For "image" task_type, ensure a vision-capable model is selected.
-        """
-        agent_spec = self._agents_by_name.get(step.agent) if step.agent else None
-
-        if agent_spec and agent_spec.preferred_backend:
-            step.backend = agent_spec.preferred_backend
-            step.model = agent_spec.preferred_model
-        else:
-            decision = self._router.resolve(task=step.task_type)
-            step.backend = decision.backend
-            step.model = decision.model
-
-        if not self._registry.model_supports(step.backend or "", step.model, "tools"):
-            fallback = None
-            try:
-                loop = asyncio.get_event_loop()
-                if not loop.is_running():
-                    fallback = loop.run_until_complete(
-                        self._registry.find_capable_model(step.backend or "", "tools")
-                    )
-            except RuntimeError:
-                pass
-            if fallback:
-                step.model = fallback
-
-        return step
-
     async def resolve_step_async(self, step: PlanStep) -> PlanStep:
-        """Async version of resolve_step with vision-model fallback for image steps."""
+        """Resolve which backend/model to use for a plan step."""
         agent_spec = self._agents_by_name.get(step.agent) if step.agent else None
 
         if agent_spec and agent_spec.preferred_backend:
@@ -410,11 +378,18 @@ class Orchestrator:
         system = ""
         if agent_spec and agent_spec.system_prompt:
             system = agent_spec.system_prompt + "\n\n"
+        if tools:
+            tool_list = ", ".join(t.name for t in tools)
+            system += (
+                f"You have these tools available: {tool_list}\n"
+                "ALWAYS use a tool when it can answer the question — "
+                "never guess when a tool can provide real data.\n\n"
+            )
         system += f"Task: {step.description}"
         if context:
             system += f"\n\nContext from previous steps:\n{context}"
 
-        agent = create_react_agent(llm, tools, prompt=system)
+        agent = build_react_graph(llm, tools, system)
 
         step_images = images if (step.task_type == "image" and images) else None
         if step_images:

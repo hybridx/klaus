@@ -21,7 +21,7 @@ Multi-agent AI assistant platform — standalone or multi-cluster — with local
 │  │   Planner → Dispatcher → Executors (parallel) → Consolidator      │     │
 │  ├────────────────────────────────────────────────────────────────────┤     │
 │  │                    LangGraph Agent (single-agent fallback)         │     │
-│  │   ReAct loop · memory context · tool execution · tracing          │     │
+│  │   ReAct loop · PostgreSQL checkpoints · tool execution · tracing  │     │
 │  └──────┬──────────────┬──────────────────┬──────────────────────┘     │
 │         │              │                  │                              │
 │  ┌──────┴──────┐ ┌─────┴──────┐ ┌────────┴────────┐                   │
@@ -32,8 +32,8 @@ Multi-agent AI assistant platform — standalone or multi-cluster — with local
 │  │ Gemini      │ │ + MD tools │ │ pgvector embeds │                   │
 │  └─────────────┘ └────────────┘ └─────────────────┘                   │
 │  ┌────────────────────────────────────────────────────────────────┐    │
-│  │  PostgreSQL + pgvector (memory, conversations, embeddings)     │    │
-│  │  MCP Server Manager · MD-Based Tools · Langfuse Observability  │    │
+│  │  PostgreSQL + pgvector (memory, conversations, embeddings,     │    │
+│  │    LangGraph checkpoints) · MCP · MD Tools · Langfuse          │    │
 │  └────────────────────────────────────────────────────────────────┘    │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -236,7 +236,6 @@ model_backends:
 orchestrator:
   planner_backend: ollama
   planner_model: qwen3:14b
-  parallel_execution: true
   md_tools_dir: data/tools
 
 log_level: info
@@ -302,7 +301,7 @@ klaus/
     ├── app.py                   # FastAPI app factory + lifespan
     ├── config/settings.py       # Pydantic settings + YAML loader
     ├── agents/
-    │   ├── graph.py             # LangGraph ReAct agent + orchestrate()
+    │   ├── graph.py             # LangGraph ReAct agent (PostgreSQL checkpoints)
     │   ├── orchestrator.py      # Multi-agent orchestrator (planner/dispatcher/executor)
     │   ├── tools.py             # MCP → LangChain tool bridge
     │   └── tracing.py           # Langfuse integration

@@ -1,7 +1,6 @@
 """Persistence backend for the memory tree.
 
-Supports JSON file (legacy), SQLite, and PostgreSQL (default). The interface is
-deliberately simple so it can be swapped without touching callers.
+Supports JSON file (tests/dev) and PostgreSQL (production).
 """
 
 from __future__ import annotations
@@ -36,11 +35,7 @@ class MemoryStoreBackend(ABC):
 
 
 class JsonFileStore(MemoryStoreBackend):
-    """Persist the memory tree as a single JSON file.
-
-    Good for local dev and single-node deployments. For multi-cluster,
-    swap this for a shared store (Redis, Postgres, etc.).
-    """
+    """Persist the memory tree as a single JSON file (tests / local dev)."""
 
     def __init__(self, path: str | Path = "data/memory.json") -> None:
         self._path = Path(path)
@@ -48,11 +43,7 @@ class JsonFileStore(MemoryStoreBackend):
 
     async def save(self, tree: MemoryTree) -> None:
         tmp = self._path.with_suffix(".tmp")
-        data = {
-            "version": 1,
-            "saved_at": time.time(),
-            "tree": tree.to_dict(),
-        }
+        data = {"version": 1, "saved_at": time.time(), "tree": tree.to_dict()}
         tmp.write_text(json.dumps(data, indent=2))
         shutil.move(str(tmp), str(self._path))
         logger.debug("Memory saved (%d nodes) to %s", tree.size, self._path)
@@ -62,11 +53,7 @@ class JsonFileStore(MemoryStoreBackend):
             return None
         try:
             data = json.loads(self._path.read_text())
-            tree = MemoryTree.from_dict(data["tree"])
-            logger.info(
-                "Memory loaded (%d nodes) from %s", tree.size, self._path
-            )
-            return tree
+            return MemoryTree.from_dict(data["tree"])
         except Exception as exc:
             logger.error("Failed to load memory from %s: %s", self._path, exc)
             return None
@@ -75,43 +62,8 @@ class JsonFileStore(MemoryStoreBackend):
         return self._path.exists()
 
 
-class SqliteStore(MemoryStoreBackend):
-    """Persist the memory tree in SQLite.
-
-    The tree is serialized as a single JSON blob in the memory_tree table.
-    This keeps the tree's hierarchical structure intact while getting
-    SQLite's durability, WAL mode, and crash safety.
-    """
-
-    def __init__(self, db: Database) -> None:
-        self._db = db
-
-    async def save(self, tree: MemoryTree) -> None:
-        await self._db.save_memory_tree(tree.to_dict())
-        logger.debug("Memory saved (%d nodes) to SQLite", tree.size)
-
-    async def load(self) -> MemoryTree | None:
-        data = await self._db.load_memory_tree()
-        if data is None:
-            return None
-        try:
-            tree = MemoryTree.from_dict(data)
-            logger.info("Memory loaded (%d nodes) from SQLite", tree.size)
-            return tree
-        except Exception as exc:
-            logger.error("Failed to load memory from SQLite: %s", exc)
-            return None
-
-    async def exists(self) -> bool:
-        return await self._db.load_memory_tree() is not None
-
-
 class PostgresStore(MemoryStoreBackend):
-    """Persist the memory tree in PostgreSQL.
-
-    Same serialization approach as SqliteStore (JSON blob), but
-    backed by asyncpg pool for better concurrency and durability.
-    """
+    """Persist the memory tree in PostgreSQL (production default)."""
 
     def __init__(self, db: Database) -> None:
         self._db = db
@@ -125,9 +77,7 @@ class PostgresStore(MemoryStoreBackend):
         if data is None:
             return None
         try:
-            tree = MemoryTree.from_dict(data)
-            logger.info("Memory loaded (%d nodes) from PostgreSQL", tree.size)
-            return tree
+            return MemoryTree.from_dict(data)
         except Exception as exc:
             logger.error("Failed to load memory from PostgreSQL: %s", exc)
             return None

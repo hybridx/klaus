@@ -26,9 +26,7 @@ embedding:
 orchestrator:
   planner_backend: ollama
   planner_model: qwen3:14b
-  parallel_execution: true
   md_tools_dir: data/tools
-  complexity_threshold: 2
 
 model_backends:
   ollama:

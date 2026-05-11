@@ -79,9 +79,7 @@ embedding:
 orchestrator:
   planner_backend: ollama    # Backend for planner/consolidator model
   planner_model: qwen3:14b   # Model for decomposing complex requests
-  parallel_execution: true   # Execute independent tasks in parallel
   md_tools_dir: data/tools   # Directory for MD-based tool definitions
-  complexity_threshold: 2    # Min sentence count to trigger orchestration
 
 # MCP servers — inline registration
 mcp_servers:
