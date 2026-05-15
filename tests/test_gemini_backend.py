@@ -14,7 +14,7 @@ class TestGeminiBackend:
 
     def test_default_model(self):
         backend = GeminiBackend()
-        assert backend._default_model == "gemini-2.0-flash"
+        assert backend._default_model == "gemini-2.5-flash"
 
     def test_custom_default_model(self):
         backend = GeminiBackend(default_model="gemini-1.5-pro")
@@ -37,7 +37,7 @@ class TestGeminiBackend:
     def test_get_chat_model_returns_langchain_model(self):
         backend = GeminiBackend(options={"api_key": "fake-key"})
         model = backend.get_chat_model()
-        assert model.model == "gemini-2.0-flash"
+        assert model.model == "gemini-2.5-flash"
 
     def test_get_chat_model_with_override(self):
         backend = GeminiBackend(options={"api_key": "fake-key"})
@@ -50,7 +50,7 @@ class TestGeminiBackend:
         models = await backend.list_models()
         assert len(models) >= 3
         names = [m.name for m in models]
-        assert "gemini-2.0-flash" in names
+        assert "gemini-2.5-flash" in names
 
     async def test_health_no_key(self):
         backend = GeminiBackend(options={"api_key": ""})

@@ -58,7 +58,7 @@ curl http://localhost:8000/api/models
       "healthy": true
     },
     "gemini": {
-      "models": ["gemini-2.0-flash"],
+      "models": ["gemini-2.5-flash"],
       "healthy": true
     }
   }

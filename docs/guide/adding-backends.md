@@ -12,7 +12,7 @@ klaus supports multiple LLM providers through its **Model Registry**. There are 
 | Backend | Provider | Config type | Default model | Key feature |
 |---------|----------|-------------|---------------|-------------|
 | `OllamaBackend` | Ollama (local) | `ollama` | `llama3.2` | Local-first, vision |
-| `GeminiBackend` | Google AI | `gemini` | `gemini-2.0-flash` | Cloud API |
+| `GeminiBackend` | Google AI | `gemini` | `gemini-2.5-flash` | Cloud API |
 | `HuggingFaceBackend` | HuggingFace Hub | `huggingface` | `Qwen/Qwen3-235B-A22B` | Inference API, vision |
 | `OpenAIBackend` | OpenAI / compatible | `openai` | `gpt-4o` | Works with any OpenAI-compatible API |
 

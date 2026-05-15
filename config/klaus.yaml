@@ -37,14 +37,13 @@ model_backends:
     default_model: llama3.2
     locality: local
 
-# Uncomment to add cloud backends (set API keys in .env first):
-#
-#  gemini:
-#    type: gemini
-#    base_url: https://generativelanguage.googleapis.com
-#    default_model: gemini-2.0-flash
-#    locality: cloud
-#
+  gemini:
+    type: gemini
+    base_url: https://generativelanguage.googleapis.com
+    default_model: gemini-2.5-flash
+    locality: cloud
+
+# Optional: Hugging Face Inference API (set HF_TOKEN in .env first):
 #  huggingface:
 #    type: huggingface
 #    default_model: Qwen/Qwen3-235B-A22B

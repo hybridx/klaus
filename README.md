@@ -223,7 +223,7 @@ model_backends:
   gemini:
     type: gemini
     base_url: https://generativelanguage.googleapis.com
-    default_model: gemini-2.0-flash
+    default_model: gemini-2.5-flash
     locality: cloud
     # API key loaded from GOOGLE_API_KEY in .env
 

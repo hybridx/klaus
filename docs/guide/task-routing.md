@@ -37,7 +37,7 @@ task_routing:
     preferred_model: granite-code:8b
   creative:
     preferred_backend: gemini
-    preferred_model: gemini-2.0-flash
+    preferred_model: gemini-2.5-flash
   analysis:
     preferred_backend: huggingface
     preferred_model: Qwen/Qwen3-235B-A22B

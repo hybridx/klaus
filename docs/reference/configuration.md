@@ -32,7 +32,7 @@ model_backends:
 
   gemini:
     type: gemini
-    default_model: gemini-2.0-flash
+    default_model: gemini-2.5-flash
     locality: cloud
     options:
       api_key: ${GOOGLE_API_KEY}
@@ -52,7 +52,7 @@ task_routing:
     keywords: [code, function, class, bug, debug, python, javascript, api, test]
   creative:
     preferred_backend: gemini
-    preferred_model: gemini-2.0-flash
+    preferred_model: gemini-2.5-flash
     description: Creative writing and content generation
     keywords: [write, story, poem, creative, fiction, essay, brainstorm]
   analysis:

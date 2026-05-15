@@ -44,7 +44,7 @@ class GeminiBackend:
         options: dict[str, Any] | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
-        self._default_model = default_model or "gemini-2.0-flash"
+        self._default_model = default_model or "gemini-2.5-flash"
         self._options = options or {}
         self._api_key = self._options.get("api_key") or os.getenv("GOOGLE_API_KEY", "")
 
@@ -96,6 +96,7 @@ class GeminiBackend:
 
     async def list_models(self) -> list[ModelInfo]:
         available = [
+            "gemini-2.5-flash",
             "gemini-2.0-flash",
             "gemini-2.0-flash-lite",
             "gemini-1.5-flash",

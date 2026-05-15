@@ -205,6 +205,8 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
         messages: [{ role: 'user', content: text }],
         id: sessionId,
         retry: true,
+        model: selectedModel?.backend ? selectedModel.name : undefined,
+        backend: selectedModel?.backend || undefined,
       }).catch(console.error);
     };
 
@@ -218,7 +220,7 @@ export default function Chat({ ws, setPage, sessionId }: Props) {
         setTimeout(trySend, 100);
       }
     });
-  }, [ws, sessionId]);
+  }, [ws, sessionId, selectedModel]);
 
   useEffect(() => {
     fetch('/api/models')

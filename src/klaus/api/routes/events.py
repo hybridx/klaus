@@ -193,7 +193,7 @@ async def _handle_chat(session_id: str, msg: dict, state) -> None:
 
     user_text = " ".join(m.get("content", "") for m in messages_raw if m.get("role") == "user")
 
-    if not explicit_backend and _is_complex(user_text) and state.agent._task_router is not None:
+    if not explicit_backend and not explicit_model and _is_complex(user_text) and state.agent._task_router is not None:
         await _handle_orchestrated_chat(session_id, state, messages_raw, images_raw, chat_id)
         return
 
@@ -224,14 +224,20 @@ async def _handle_chat(session_id: str, msg: dict, state) -> None:
         else:
             decision = state.task_router.resolve(task=task)
 
+        user_forced = bool(explicit_backend)
         if use_tools and not state.model_registry.model_supports(
             decision.backend, decision.model, "tools"
         ):
-            fallback = await state.model_registry.find_capable_model(decision.backend, "tools")
-            if fallback:
-                decision.model = fallback
-            else:
+            if user_forced:
                 use_tools = False
+            else:
+                fallback = await state.model_registry.find_capable_model(
+                    decision.backend, "tools"
+                )
+                if fallback:
+                    decision.model = fallback
+                else:
+                    use_tools = False
 
         model_label = decision.model or "default"
         await _status(session_id, state, chat_id, "routed", f"{model_label} on {decision.backend}")
