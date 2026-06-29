@@ -23,9 +23,11 @@ embedding:
 
 # Multi-agent orchestrator: uses a planner model to decompose complex requests
 # and dispatch sub-tasks to the best-fit models.
+# The planner needs strong reasoning + reliable JSON output — cloud models
+# excel at this. Execution tasks stay on fast local models via task_routing.
 orchestrator:
-  planner_backend: ollama
-  planner_model: qwen3:14b
+  planner_backend: gemini
+  planner_model: gemini-2.5-pro
   md_tools_dir: data/tools
 
 model_backends:

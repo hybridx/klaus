@@ -19,8 +19,8 @@ This document explains klaus's architecture by comparing it to the major AI agen
 │  │   Planner → Human Approval → Dispatch → ReAct Executors           │     │
 │  │   Sense → Plan → Act → Reflect (per step)                         │     │
 │  ├────────────────────────────────────────────────────────────────────┤    │
-│  │                    LangGraph Agent (single-agent fallback)         │    │
-│  │   ReAct loop · memory context · tool execution · tracing          │     │
+│  │             Deep Agents SDK (single-agent fallback)                │    │
+│  │   Planning · subagents · MCP tools · memory context · tracing     │     │
 │  └──────┬──────────────┬──────────────────┬──────────────────────┘     │
 │         │              │                  │                              │
 │  ┌──────┴──────┐ ┌─────┴──────┐ ┌────────┴────────┐                   │
@@ -213,23 +213,27 @@ Klaus's MCP manager includes several resilience features that match Cursor's beh
 
 ## Comparison with Other Agent Frameworks
 
-### LangGraph
+### LangGraph / Deep Agents SDK
 
-**What it is:** Directed graph-based agent orchestration from LangChain. Agents are state machines where nodes are processing steps and edges define transitions.
+**What it is:** LangGraph is directed graph-based agent orchestration from LangChain. The **Deep Agents SDK** (`deepagents`) is the official higher-level harness built on top of LangGraph — it provides `create_deep_agent()` which handles the ReAct loop, tool calling, subagent spawning, middleware, and planning internally.
 
-**How klaus relates:** klaus *uses* LangGraph as its agent runtime. The `klausAgent` class builds an explicit 5-step `StateGraph` per request, feeding it the routed LLM and tools collected from the superpower registry. LangGraph handles the ReAct loop, tool calling, and message management.
+**How klaus relates:** klaus uses the **Deep Agents SDK** as its agent runtime. The `klausAgent` class calls `create_deep_agent()` to build the core agent graph, passing in the routed LLM, superpower tools, and an MCP subagent. The orchestrator also uses `create_deep_agent()` per-step for specialist execution.
 
-| Concept | LangGraph | klaus |
+| Concept | Deep Agents SDK | klaus |
 |---|---|---|
-| Agent definition | Graph nodes + edges | `klausAgent` builds an explicit `StateGraph` (worker + tools nodes) |
-| State management | Explicit `StateGraph` with checkpointing | `AsyncPostgresSaver` persists checkpoints to the same PostgreSQL database |
-| Tool binding | Pass tools to graph nodes | Superpowers collect tools automatically |
-| Model selection | Caller chooses LLM | Task router selects model based on rules + locality |
-| Observability | LangSmith | Langfuse (or any LangChain callback) |
+| Agent definition | `create_deep_agent(model, tools, subagents)` | `klausAgent._build_agent()` calls `create_deep_agent` with Klaus's tools and MCP subagent |
+| Subagents | Dedicated specialist agents with isolated tool sets | MCP tools exposed as a dedicated MCP subagent for context isolation |
+| State management | Built-in LangGraph checkpointing | `AsyncPostgresSaver` persists checkpoints to PostgreSQL |
+| Tool binding | Pass tools to `create_deep_agent()` | Superpowers collect tools automatically |
+| Model selection | Pass LLM or model string | Task router selects model based on rules + locality |
+| Middleware | `wrap_model_call` for request interception | Planned: dynamic model routing middleware |
+| Observability | LangSmith/callbacks | Langfuse (or any LangChain callback) |
 
 **Checkpointing:** LangGraph's `AsyncPostgresSaver` (from `langgraph-checkpoint-postgres`) is connected to the same PostgreSQL database that stores memory, conversations, and embeddings. This means conversation thread state survives server restarts — multi-turn tool loops and reasoning chains resume exactly where they left off. Each conversation's `chat_id` maps to a LangGraph `thread_id` for checkpoint isolation.
 
-**Key difference:** LangGraph is a library — you build your own agent loop. klaus is a platform that wraps LangGraph with model routing, memory, plugin management, MCP, and a real-time UI.
+**MCP Subagent pattern:** MCP tools are not mixed into the main agent's tool set. Instead, they are wrapped in a dedicated subagent (`mcp-agent`) that the main agent can delegate to. This keeps the main agent's context window clean — MCP lookups are handled by the specialist, and only the results are passed back. This follows the Deep Agents best practice of context isolation.
+
+**Key difference:** Deep Agents SDK handles the internal agent loop. Klaus is a platform that wraps it with multi-model routing, hierarchical memory, MCP server management, human-in-the-loop orchestration, and a real-time web UI.
 
 ---
 
@@ -360,6 +364,7 @@ Based on the analysis above, these are the architectural additions planned for k
 | MCP OAuth2 flow | Cursor | **Done** — SDK-based PKCE flow, zero config (same as Cursor) |
 | Config-driven MCP | Cursor/Claude | **Done** — servers from `mcp.json`, OAuth auto-discovered |
 | MCP-first agents | — | **Done** — agents use MCP servers, no custom integrations needed |
+| Deep Agents SDK | LangChain | **Done** — agent core powered by `create_deep_agent` with MCP subagent |
 | Agent handoffs | OpenAI Agents SDK | Planned — triage agent delegates to specialist superpowers |
 | A2A protocol | Google A2A | Planned — Agent Cards, task state machine, multi-instance discovery |
 | Guardrails | OpenAI Agents SDK | Planned — input/output validation pipeline |
@@ -383,7 +388,7 @@ Use this table to find the right files when making changes:
 | **Add a UI page** | `ui/src/pages/New.tsx`, `ui/src/App.tsx` (type + render), `ui/src/components/Layout.tsx` (nav) |
 | **Change the memory tree structure** | `memory/tree.py`, possibly `memory/store.py` and `memory/index.py` |
 | **Change the database schema** | `db.py` (`_SCHEMA`), migration logic in `connect()` |
-| **Change the agent behavior** | `agents/graph.py` (`_SYSTEM_PROMPT`, `stream()`, `_build_memory_context`) |
+| **Change the agent behavior** | `agents/graph.py` (`_SYSTEM_PROMPT`, `_build_agent()`, `_build_mcp_subagent()`) |
 | **Change task routing** | `routing/router.py`, `config/klaus.yaml` (`task_routing` section) |
 | **Change the event bus** | `events/bus.py` (add `EventType`), `api/routes/events.py` (forward events) |
 | **Change config structure** | `config/settings.py` (Pydantic models), `config/klaus.yaml`, `app.py` (usage) |

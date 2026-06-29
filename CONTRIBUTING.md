@@ -69,7 +69,7 @@ ui/                  Frontend (React + Vite + Tailwind CSS + React Flow)
 └── tsconfig.json
 
 src/klaus/           Backend (Python + FastAPI)
-├── agents/          LangGraph agent, tool bridges, Langfuse tracing
+├── agents/          Deep Agents SDK agent, MCP subagent, orchestrator, tracing
 ├── api/             FastAPI routes (chat, models, mcp, routing, memory, superpowers)
 ├── config/          Pydantic settings, YAML loader
 ├── events/          SSE event bus
@@ -169,5 +169,6 @@ Key design choices to be aware of:
 - **Memory tree**: All persistent state lives in a hierarchical tree — new capabilities plug into it as branches
 - **Superpowers**: Every new capability is a `Superpower` subclass that registers tools and memory (built-ins: MCP bridge, memory tools, skills system, image generation)
 - **Skills system**: Hermes-inspired self-improving skills — the agent creates, reuses, and improves procedures automatically
-- **LangChain/LangGraph**: Model abstraction and agent orchestration use the LangChain ecosystem
+- **Deep Agents SDK**: Agent runtime powered by LangChain's Deep Agents SDK (`create_deep_agent`) — handles the ReAct loop, subagent spawning, and tool calling. MCP tools are exposed as a dedicated subagent for context isolation
+- **LangChain/LangGraph**: Model abstraction and checkpointing use the LangChain/LangGraph ecosystem
 - **React + Tailwind frontend**: The dashboard is a React + Vite project (`ui/`) with Tailwind CSS and React Flow for the pipeline visualization. `npm run dev` gives HMR; `npm run build` outputs to `src/klaus/ui/dist/` for the backend to serve

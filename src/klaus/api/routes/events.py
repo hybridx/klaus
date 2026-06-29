@@ -193,7 +193,8 @@ async def _handle_chat(session_id: str, msg: dict, state) -> None:
 
     user_text = " ".join(m.get("content", "") for m in messages_raw if m.get("role") == "user")
 
-    if not explicit_backend and not explicit_model and _is_complex(user_text) and state.agent._task_router is not None:
+    is_auto = not explicit_backend and not explicit_model
+    if is_auto and _is_complex(user_text) and state.agent._task_router is not None:
         await _handle_orchestrated_chat(session_id, state, messages_raw, images_raw, chat_id)
         return
 

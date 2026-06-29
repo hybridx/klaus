@@ -1,8 +1,8 @@
 """Multi-agent orchestrator — planner + human approval + specialist agents + consolidator.
 
-Uses LangGraph StateGraph to decompose complex requests into sub-tasks,
-present the plan for human approval, route each to the best-fit specialist
-agent, execute them, and consolidate into a single coherent response.
+Decomposes complex requests into sub-tasks, presents the plan for human
+approval, routes each to the best-fit specialist agent (via Deep Agents SDK),
+executes them, and consolidates into a single coherent response.
 Learns from plan corrections to improve future planning.
 """
 
@@ -16,9 +16,9 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Annotated, Any, TypedDict
 
+from deepagents import create_deep_agent
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from klaus.agents.graph import build_react_graph
 from klaus.agents.md_agents import AgentSpec
 from klaus.models.base import ChatMessage
 from klaus.routing.router import classify_task
@@ -389,7 +389,7 @@ class Orchestrator:
         if context:
             system += f"\n\nContext from previous steps:\n{context}"
 
-        agent = build_react_graph(llm, tools, system)
+        agent = create_deep_agent(model=llm, tools=tools, system_prompt=system)
 
         step_images = images if (step.task_type == "image" and images) else None
         if step_images:

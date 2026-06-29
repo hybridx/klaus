@@ -1,24 +1,23 @@
-"""LangGraph agent — ReAct graph with evaluator loop.
+"""Deep Agents powered agent — replaces the manual LangGraph ReAct graph.
 
-Graph: START → worker ⇄ tools → evaluator → (END or worker retry)
+Uses `create_deep_agent` from the Deep Agents SDK for the core agent loop
+(planning, tool calling, context management, subagent spawning).
 
-The evaluator is a self-critique step that checks response quality against
-optional success_criteria. When no criteria are set, it auto-passes with
-zero overhead. When criteria are set, it uses structured LLM output to
-decide pass/fail, allowing one retry with feedback.
+Klaus adds on top:
+  - MCP server tools exposed as a dedicated subagent
+  - Multi-model routing via the TaskRouter
+  - Memory context injection
+  - SSE streaming adapter for the web UI
 """
 
 from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator
-from typing import TYPE_CHECKING, Annotated, Any, TypedDict
+from typing import TYPE_CHECKING, Any
 
+from deepagents import create_deep_agent
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
-from langgraph.graph import END, START, StateGraph
-from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode
-from pydantic import BaseModel, Field
 
 from klaus.agents.tools import collect_mcp_tools
 from klaus.agents.tracing import get_langfuse_handler
@@ -30,136 +29,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_MAX_EVAL_RETRIES = 1
 
-
-# -- State -------------------------------------------------------------------
-
-
-class AgentState(TypedDict):
-    messages: Annotated[list[Any], add_messages]
-    success_criteria: str
-    feedback: str
-    eval_passed: bool
-    eval_retries: int
-
-
-class EvalResult(BaseModel):
-    """Structured evaluator output."""
-
-    feedback: str = Field(description="Brief feedback on the response")
-    passed: bool = Field(description="True if the response meets the criteria")
-    needs_user_input: bool = Field(
-        description="True if user clarification is needed"
-    )
-
-
-# -- Nodes -------------------------------------------------------------------
-
-
-def _make_worker_node(llm, system_prompt: str):
-    def worker(state: AgentState) -> dict:
-        messages = list(state["messages"])
-        prompt = system_prompt
-        fb = state.get("feedback", "")
-        if fb:
-            prompt += (
-                f"\n\nYour previous response was rejected. "
-                f"Feedback: {fb}\nPlease improve your response."
-            )
-        if not any(isinstance(m, SystemMessage) for m in messages):
-            messages = [SystemMessage(content=prompt), *messages]
-        return {"messages": [llm.invoke(messages)]}
-
-    return worker
-
-
-def _make_evaluator_node(llm):
-    def evaluator(state: AgentState) -> dict:
-        criteria = state.get("success_criteria", "")
-        retries = state.get("eval_retries", 0)
-        if not criteria or retries >= _MAX_EVAL_RETRIES:
-            return {"eval_passed": True}
-
-        last = ""
-        for msg in reversed(state["messages"]):
-            if isinstance(msg, AIMessage) and msg.content:
-                last = msg.content if isinstance(msg.content, str) else str(msg.content)
-                break
-        if not last:
-            return {"eval_passed": True}
-
-        try:
-            eval_llm = llm.with_structured_output(EvalResult)
-            result = eval_llm.invoke([
-                SystemMessage(
-                    content="Evaluate if the assistant's response meets the criteria. "
-                    "Be lenient for conversational replies. Give the benefit of the doubt."
-                ),
-                HumanMessage(
-                    content=f"Criteria: {criteria}\n\nResponse:\n{last[:2000]}"
-                ),
-            ])
-            if result.passed or result.needs_user_input:
-                return {"eval_passed": True}
-            logger.info("Evaluator rejected (retry %d): %s", retries, result.feedback)
-            return {
-                "eval_passed": False,
-                "feedback": result.feedback,
-                "eval_retries": retries + 1,
-            }
-        except Exception as exc:
-            logger.debug("Evaluator fallback (auto-pass): %s", exc)
-            return {"eval_passed": True}
-
-    return evaluator
-
-
-# -- Routing -----------------------------------------------------------------
-
-
-def _route_worker(state: AgentState) -> str:
-    last = state["messages"][-1]
-    if hasattr(last, "tool_calls") and last.tool_calls:
-        return "tools"
-    return "evaluator"
-
-
-def _route_evaluator(state: AgentState) -> str:
-    if state.get("eval_passed", True):
-        return END
-    return "worker"
-
-
-# -- Build -------------------------------------------------------------------
-
-
-def build_react_graph(llm, tools: list, system_prompt: str, checkpointer=None):
-    """Build: START → worker ⇄ tools → evaluator → (END or worker retry)."""
-    builder = StateGraph(AgentState)
-
-    builder.add_node("worker", _make_worker_node(llm, system_prompt))
-    builder.add_node("evaluator", _make_evaluator_node(llm))
-    if tools:
-        builder.add_node("tools", ToolNode(tools=tools))
-
-    builder.add_edge(START, "worker")
-    if tools:
-        builder.add_conditional_edges(
-            "worker", _route_worker, {"tools": "tools", "evaluator": "evaluator"}
-        )
-        builder.add_edge("tools", "worker")
-    else:
-        builder.add_edge("worker", "evaluator")
-
-    builder.add_conditional_edges(
-        "evaluator", _route_evaluator, {END: END, "worker": "worker"}
-    )
-
-    return builder.compile(checkpointer=checkpointer)
-
-
-# -- Message conversion ------------------------------------------------------
+# -- Message conversion -------------------------------------------------------
 
 _ROLE_MAP = {"system": SystemMessage, "user": HumanMessage, "assistant": AIMessage}
 
@@ -183,7 +54,7 @@ def _to_lc_messages(messages: list[ChatMessage]) -> list:
     return result
 
 
-# -- System prompt ------------------------------------------------------------
+# -- System prompt -------------------------------------------------------------
 
 _SYSTEM_PROMPT = (
     "You are Klaus, an AI assistant with persistent memory, external tools, "
@@ -211,11 +82,45 @@ def _build_mcp_tool_summary(mcp_manager) -> str:
     return "\n".join(lines)
 
 
+# -- MCP subagent builder -----------------------------------------------------
+
+
+def _build_mcp_subagent(mcp_manager) -> dict | None:
+    """Create a dedicated subagent with all connected MCP server tools.
+
+    Context isolation: the main agent delegates MCP lookups to this specialist,
+    keeping its own context window clean.
+    """
+    tools = collect_mcp_tools(mcp_manager)
+    if not tools:
+        return None
+
+    server_names = [
+        name for name, ts in mcp_manager.get_all_tools().items() if ts
+    ]
+    servers_desc = ", ".join(server_names) if server_names else "external services"
+
+    return {
+        "name": "mcp-agent",
+        "description": (
+            f"Specialist with access to connected external services ({servers_desc}) "
+            "via MCP servers. Delegate to this agent for any external data lookup, "
+            "API query, or action on third-party platforms."
+        ),
+        "system_prompt": (
+            "You have access to MCP server tools. Use them to answer questions "
+            "and perform actions on external services. Always call the most "
+            "specific tool available. Return results clearly and concisely."
+        ),
+        "tools": tools,
+    }
+
+
 # -- klausAgent ---------------------------------------------------------------
 
 
 class klausAgent:  # noqa: N801
-    """LangGraph-powered agent with memory, tools, evaluator, and orchestration."""
+    """Deep Agents powered assistant with memory, MCP, tools, and orchestration."""
 
     def __init__(
         self,
@@ -268,7 +173,7 @@ class klausAgent:  # noqa: N801
             parts.append(f"What you currently remember:\n\n{memory_context}")
         return "\n\n".join(parts)
 
-    def _build_graph(
+    def _build_agent(
         self,
         backend=None,
         model=None,
@@ -276,13 +181,31 @@ class klausAgent:  # noqa: N801
         memory_context=None,
         use_tools=True,
     ):
+        """Build a Deep Agent graph for a single request."""
         llm = self._model_registry.get_chat_model(
             backend=backend, model=model, temperature=temperature,
         )
         tools = self._collect_tools() if use_tools else []
         prompt = self._build_system_prompt(memory_context)
-        logger.debug("Graph built with %d tools", len(tools))
-        return build_react_graph(llm, tools, prompt, checkpointer=self._checkpointer)
+
+        subagents = []
+        mcp_sub = _build_mcp_subagent(self._mcp_manager)
+        if mcp_sub:
+            subagents.append(mcp_sub)
+
+        logger.debug(
+            "Deep Agent built: %d tools, %d subagents",
+            len(tools), len(subagents),
+        )
+
+        return create_deep_agent(
+            model=llm,
+            tools=tools,
+            system_prompt=prompt,
+            subagents=subagents or None,
+            checkpointer=self._checkpointer,
+            name="klaus",
+        )
 
     def _make_config(self, metadata: dict[str, Any] | None) -> dict[str, Any]:
         thread_id = (metadata or {}).get("chat_id", "default")
@@ -301,15 +224,11 @@ class klausAgent:  # noqa: N801
         metadata: dict[str, Any] | None = None,
     ) -> dict:
         memory_context = await self._build_memory_context(messages)
-        graph = self._build_graph(backend, model, temperature, memory_context)
+        agent = self._build_agent(backend, model, temperature, memory_context)
         config = self._make_config(metadata)
 
-        user_text = " ".join(m.content for m in messages if m.role == "user")
-        input_state = {
-            "messages": _to_lc_messages(messages),
-            "success_criteria": f"Respond helpfully to: {user_text[:200]}",
-        }
-        result = await graph.ainvoke(input_state, config=config)
+        input_state = {"messages": _to_lc_messages(messages)}
+        result = await agent.ainvoke(input_state, config=config)
 
         content = ""
         for msg in reversed(result.get("messages", [])):
@@ -344,8 +263,9 @@ class klausAgent:  # noqa: N801
         metadata: dict[str, Any] | None = None,
         use_tools: bool = True,
     ) -> AsyncIterator[dict]:
+        """Stream tokens via the Deep Agent, adapting events to Klaus SSE protocol."""
         memory_context = await self._build_memory_context(messages)
-        graph = self._build_graph(
+        agent = self._build_agent(
             backend, model, temperature, memory_context, use_tools=use_tools,
         )
         config = self._make_config(metadata)
@@ -354,7 +274,7 @@ class klausAgent:  # noqa: N801
         full_content = ""
         tool_call_count = 0
 
-        async for msg, _ in graph.astream(
+        async for msg, _ in agent.astream(
             input_state, config=config, stream_mode="messages",
         ):
             if isinstance(msg, ToolMessage):

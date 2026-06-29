@@ -23,6 +23,7 @@ dependencies = [
     "asyncpg>=0.30.0",
     "langgraph-checkpoint-postgres>=3.0.5",
     "psycopg-binary>=3.3.4",
+    "deepagents>=0.6.1",
 ]
 
 [project.optional-dependencies]

@@ -20,8 +20,8 @@ Multi-agent AI assistant platform — standalone or multi-cluster — with local
 │  │                  Multi-Agent Orchestrator                          │     │
 │  │   Planner → Dispatcher → Executors (parallel) → Consolidator      │     │
 │  ├────────────────────────────────────────────────────────────────────┤     │
-│  │                    LangGraph Agent (single-agent fallback)         │     │
-│  │   ReAct loop · PostgreSQL checkpoints · tool execution · tracing  │     │
+│  │                    Deep Agents SDK (single-agent fallback)         │     │
+│  │   Planning · subagents · MCP tools · PostgreSQL checkpoints       │     │
 │  └──────┬──────────────┬──────────────────┬──────────────────────┘     │
 │         │              │                  │                              │
 │  ┌──────┴──────┐ ┌─────┴──────┐ ┌────────┴────────┐                   │
@@ -270,7 +270,7 @@ klaus/
 │   ├── analyst.md
 │   ├── github-reviewer.md
 │   └── jira-developer.md       # Uses Atlassian MCP server
-├── tests/                       # Test suite (275+ tests)
+├── tests/                       # Test suite (279+ tests)
 ├── ui/                          # Frontend (React + Vite + Tailwind + React Flow)
 │   ├── package.json
 │   ├── vite.config.ts
@@ -301,7 +301,7 @@ klaus/
     ├── app.py                   # FastAPI app factory + lifespan
     ├── config/settings.py       # Pydantic settings + YAML loader
     ├── agents/
-    │   ├── graph.py             # LangGraph ReAct agent (PostgreSQL checkpoints)
+    │   ├── graph.py             # Deep Agents SDK agent (subagents, MCP, checkpoints)
     │   ├── orchestrator.py      # Multi-agent orchestrator (planner/dispatcher/executor)
     │   ├── tools.py             # MCP → LangChain tool bridge
     │   └── tracing.py           # Langfuse integration
@@ -365,6 +365,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, code standards, and how to add
 
 ## Roadmap
 
+- [x] **Deep Agents SDK** — agent core powered by LangChain's Deep Agents SDK (`create_deep_agent`) with MCP subagent, middleware, and built-in planning
 - [x] **Multi-agent orchestration** — planner decomposes requests, dispatches to specialist agents, consolidates results
 - [x] **MD-based tools** — define agent tools from Markdown files (no code needed)
 - [x] **MD-based agents** — define specialist agents from Markdown files (`data/agents/`)
